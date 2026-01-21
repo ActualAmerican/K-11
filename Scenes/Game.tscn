@@ -1,0 +1,102 @@
+[gd_scene load_steps=23 format=3 uid="uid://skkut8fchrar"]
+
+[ext_resource type="Texture2D" uid="uid://dvx87r175v28j" path="res://Assets/Image Assets/Wall.PNG" id="1_iukft"]
+[ext_resource type="Texture2D" uid="uid://bip8s6yw33qga" path="res://Assets/Image Assets/Desk.PNG" id="2_gl6un"]
+[ext_resource type="Texture2D" uid="uid://djlv43hup7a41" path="res://Assets/Image Assets/IMG_0961.PNG" id="3_2irst"]
+[ext_resource type="Texture2D" uid="uid://b624h13no2o5c" path="res://Assets/Image Assets/IMG_0974.PNG" id="3_7lihs"]
+[ext_resource type="Texture2D" uid="uid://cu075fgunalgj" path="res://Assets/Image Assets/IMG_0963.PNG" id="3_j5yw3"]
+[ext_resource type="Texture2D" uid="uid://ccw1xawdp6wcm" path="res://Assets/Image Assets/IMG_0964.PNG" id="4_fgofq"]
+[ext_resource type="Texture2D" uid="uid://dwaa5u1yoancj" path="res://Assets/Image Assets/IMG_0966.PNG" id="6_2irst"]
+[ext_resource type="Texture2D" uid="uid://camos11br827e" path="res://Assets/Image Assets/IMG_0965.PNG" id="8_bf53h"]
+[ext_resource type="Texture2D" uid="uid://cf1cxr5cydnvv" path="res://Assets/Image Assets/IMG_0962.PNG" id="8_tfod6"]
+[ext_resource type="Texture2D" uid="uid://dhwjqallojwbh" path="res://Assets/Image Assets/IMG_0967.PNG" id="9_rajel"]
+[ext_resource type="Texture2D" uid="uid://di7idi3d8kyfc" path="res://Assets/Image Assets/IMG_0968.PNG" id="10_vvhu1"]
+[ext_resource type="Texture2D" uid="uid://dkmqxupphqh5q" path="res://Assets/Image Assets/IMG_0969.PNG" id="11_lbihj"]
+[ext_resource type="Texture2D" uid="uid://coiwtup6mdty8" path="res://Assets/Image Assets/IMG_0970.PNG" id="12_raj38"]
+[ext_resource type="Texture2D" uid="uid://bnnkaalrvavs2" path="res://Assets/Image Assets/IMG_0971.PNG" id="13_8e0uq"]
+[ext_resource type="Texture2D" uid="uid://d24imrecm3po4" path="res://Assets/Image Assets/IMG_0972.PNG" id="14_i0vto"]
+[ext_resource type="Texture2D" uid="uid://bpcmjeba0fay3" path="res://Assets/Image Assets/IMG_0973.PNG" id="15_3jf1l"]
+[ext_resource type="Texture2D" uid="uid://ci5jutaxmh6y1" path="res://Assets/Image Assets/IMG_0976.PNG" id="17_356ba"]
+[ext_resource type="Texture2D" uid="uid://bhqesrx1ltejp" path="res://Assets/Image Assets/IMG_0975.PNG" id="18_i4lct"]
+[ext_resource type="Texture2D" uid="uid://bn6nrwf3ml6em" path="res://Assets/Image Assets/IMG_0977.PNG" id="19_iyesh"]
+[ext_resource type="Script" uid="uid://fu7nyd24wavh" path="res://Scripts/Camera.gd" id="20_i1pr2"]
+[ext_resource type="Texture2D" uid="uid://dxiuk1bsyglk3" path="res://Assets/Image Assets/IMG_0930.PNG" id="20_rajel"]
+[ext_resource type="Texture2D" uid="uid://coe60tqemvxlo" path="res://Assets/Image Assets/image0.png" id="21_vvhu1"]
+
+[node name="Game" type="Node2D"]
+
+[node name="Wall" type="Sprite2D" parent="."]
+texture = ExtResource("1_iukft")
+
+[node name="Desk" type="Sprite2D" parent="."]
+texture = ExtResource("2_gl6un")
+
+[node name="Vent" type="Sprite2D" parent="."]
+texture = ExtResource("3_2irst")
+
+[node name="Window" type="Sprite2D" parent="."]
+texture = ExtResource("3_7lihs")
+
+[node name="FrameBack" type="Sprite2D" parent="."]
+texture = ExtResource("4_fgofq")
+
+[node name="BlackBoard" type="Sprite2D" parent="."]
+texture = ExtResource("6_2irst")
+
+[node name="ReqBoard" type="Sprite2D" parent="."]
+texture = ExtResource("8_bf53h")
+
+[node name="Panel" type="Sprite2D" parent="."]
+texture = ExtResource("8_tfod6")
+
+[node name="Alarm" type="Sprite2D" parent="."]
+texture = ExtResource("9_rajel")
+
+[node name="Clock" type="Sprite2D" parent="."]
+texture = ExtResource("10_vvhu1")
+
+[node name="Folder" type="Sprite2D" parent="."]
+texture = ExtResource("11_lbihj")
+
+[node name="Danger" type="Sprite2D" parent="."]
+texture = ExtResource("12_raj38")
+
+[node name="Ticker" type="Sprite2D" parent="."]
+texture = ExtResource("13_8e0uq")
+
+[node name="Sound" type="Sprite2D" parent="."]
+texture = ExtResource("14_i0vto")
+
+[node name="Measurements" type="Sprite2D" parent="."]
+texture = ExtResource("15_3jf1l")
+
+[node name="Frame" type="Sprite2D" parent="."]
+texture = ExtResource("3_j5yw3")
+
+[node name="Camera" type="Sprite2D" parent="."]
+texture = ExtResource("17_356ba")
+
+[node name="Computer" type="Sprite2D" parent="."]
+texture = ExtResource("18_i4lct")
+
+[node name="Combo" type="Sprite2D" parent="."]
+texture = ExtResource("19_iyesh")
+
+[node name="Revolver" type="Sprite2D" parent="."]
+position = Vector2(58, -397)
+scale = Vector2(0.275, 0.275)
+texture = ExtResource("20_rajel")
+centered = false
+
+[node name="Phone" type="Sprite2D" parent="."]
+texture = ExtResource("21_vvhu1")
+
+[node name="Camera2D" type="Camera2D" parent="."]
+zoom = Vector2(0.84, 0.84)
+limit_left = -1280
+limit_top = -720
+limit_right = 1280
+limit_bottom = 720
+editor_draw_limits = true
+editor_draw_drag_margin = true
+script = ExtResource("20_i1pr2")
