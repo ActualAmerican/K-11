@@ -8,6 +8,11 @@ extends Camera2D
 @export var snap_offset_world: float = 200.0
 @export var snap_strength: float = 5.5
 
+@export var is_overlay_open: bool = false
+
+func set_overlay_open(open: bool) -> void:
+	is_overlay_open = open
+
 var _pan_velocity: Vector2 = Vector2.ZERO
 var _default_position: Vector2 = Vector2.ZERO
 
@@ -17,8 +22,13 @@ func _ready() -> void:
 	_default_position = global_position
 
 func _process(delta: float) -> void:
-	if not mouse_pan_enabled:
+	if Input.is_action_just_pressed("toggle_edge_pan"):
+		mouse_pan_enabled = not mouse_pan_enabled
+		print("[CAM] edge-pan = ", ("ON" if mouse_pan_enabled else "OFF"), " | overlay_open = ", is_overlay_open)
+
+	if not mouse_pan_enabled or is_overlay_open:
 		return
+
 
 	var viewport_size: Vector2 = get_viewport_rect().size
 	var mouse: Vector2 = get_viewport().get_mouse_position()
