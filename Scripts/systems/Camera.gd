@@ -13,7 +13,6 @@ extends Camera2D
 func set_overlay_open(open: bool) -> void:
 	is_overlay_open = open
 
-var _pan_velocity: Vector2 = Vector2.ZERO
 var _default_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:

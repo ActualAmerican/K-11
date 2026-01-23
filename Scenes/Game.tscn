@@ -1,7 +1,6 @@
 [gd_scene load_steps=24 format=3 uid="uid://skkut8fchrar"]
 
 [ext_resource type="Texture2D" uid="uid://dvx87r175v28j" path="res://Assets/Image Assets/Wall.PNG" id="1_iukft"]
-[ext_resource type="Script" uid="uid://doox8nv11th3w" path="res://Scripts/GameController.gd" id="1_lbihj"]
 [ext_resource type="Texture2D" uid="uid://bip8s6yw33qga" path="res://Assets/Image Assets/Desk.PNG" id="2_gl6un"]
 [ext_resource type="Texture2D" uid="uid://djlv43hup7a41" path="res://Assets/Image Assets/IMG_0961.PNG" id="3_2irst"]
 [ext_resource type="Texture2D" uid="uid://b624h13no2o5c" path="res://Assets/Image Assets/IMG_0974.PNG" id="3_7lihs"]
@@ -20,12 +19,11 @@
 [ext_resource type="Texture2D" uid="uid://ci5jutaxmh6y1" path="res://Assets/Image Assets/IMG_0976.PNG" id="17_356ba"]
 [ext_resource type="Texture2D" uid="uid://bhqesrx1ltejp" path="res://Assets/Image Assets/IMG_0975.PNG" id="18_i4lct"]
 [ext_resource type="Texture2D" uid="uid://bn6nrwf3ml6em" path="res://Assets/Image Assets/IMG_0977.PNG" id="19_iyesh"]
-[ext_resource type="Script" uid="uid://fu7nyd24wavh" path="res://Scripts/Camera.gd" id="20_i1pr2"]
+[ext_resource type="Script" uid="uid://ttjjhb04pnjp" path="res://Scripts/systems/Camera.gd" id="20_i1pr2"]
 [ext_resource type="Texture2D" uid="uid://dxiuk1bsyglk3" path="res://Assets/Image Assets/IMG_0930.PNG" id="20_rajel"]
 [ext_resource type="Texture2D" uid="uid://coe60tqemvxlo" path="res://Assets/Image Assets/image0.png" id="21_vvhu1"]
 
 [node name="Game" type="Node2D"]
-script = ExtResource("1_lbihj")
 
 [node name="Wall" type="Sprite2D" parent="."]
 texture = ExtResource("1_iukft")
