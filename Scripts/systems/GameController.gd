@@ -7,6 +7,15 @@ var run_state: int = RunState.IDLE
 var run_seed_value: int = 0
 var run_seed_text: String = ""
 var forced_seed_text: String = ""
+const SeedUtil := preload("res://Scripts/systems/SeedUtil.gd")
+const SuspectIO := preload("res://Scripts/systems/SuspectIO.gd")
+const SuspectFactory := preload("res://Scripts/systems/SuspectFactory.gd")
+const SuspectData := preload("res://Scripts/systems/SuspectData.gd")
+var run_seed_u64: int = 0
+var suspect_index: int = 0
+var suspect_seed_value: int = 0
+var suspect_seed_text: String = ""
+var current_suspect: SuspectData = null
 
 var overlay_open: bool = false
 var overlay_id: String = ""
@@ -18,9 +27,12 @@ var overlay_id: String = ""
 @export var dev_log_inputs: bool = false
 @export var dev_log_state_changes: bool = true
 @export var dev_log_overlays: bool = true
+@export var dev_allow_suspect_io: bool = true
 
 var _hud_layer: CanvasLayer
 var _hud_label: Label
+var _hud_hotkeys_label: Label
+var _hud_event_log_label: Label
 var _last_logged_app_state: int = -1
 var _last_logged_run_state: int = -1
 var _last_logged_overlay_open: bool = false
@@ -42,6 +54,28 @@ var _seed_line: LineEdit
 var _seed_label: Label
 var _seed_container: MarginContainer
 var _seed_ok_button: Button
+var _suspect_import_dialog: AcceptDialog
+var _suspect_import_text: TextEdit
+var _suspect_import_label: Label
+var _suspect_import_error_label: Label
+var _suspect_import_hint_label: Label
+var _suspect_import_prev_hud_visible: bool = false
+var _last_import_prompt_time_msec: int = 0
+var _camera_node: Camera2D
+var _camera_missing_logged: bool = false
+var _hud_refresh_accum: float = 0.0
+const HUD_REFRESH_INTERVAL: float = 0.1
+var _dev_event_log: Array[String] = []
+const DEV_EVENT_LOG_MAX: int = 50
+const DEV_EVENT_LOG_VISIBLE: int = 12
+const DEV_EVENT_LOG_LINE_HEIGHT: float = 14.0
+const DEV_EVENT_LOG_WIDTH: float = 520.0
+var _event_log_visible_lines: int = DEV_EVENT_LOG_VISIBLE
+var _last_toggle_edge_pan_event_id: int = 0
+var _last_force_verdict_event_id: int = 0
+var _seed_prompt_prev_hud_visible: bool = false
+var _pending_seed_reload: bool = false
+var _pending_seed_text: String = ""
 
 func _ready() -> void:
 	_overlay_manager = preload("res://Scripts/systems/OverlayManager.gd").new()
@@ -52,6 +86,7 @@ func _ready() -> void:
 	_install_seed_prompt()
 	_set_dev_hud_visible(dev_hud_enabled)
 	_cleanup_duplicate_hud_labels()
+	_cache_camera()
 	_update_app_state()
 	_apply_state_policy("ready")
 	_update_hud()
@@ -59,15 +94,32 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_update_app_state()
-	_update_hud()
+	if _pending_seed_reload:
+		_pending_seed_reload = false
+		if _pending_seed_text == forced_seed_text:
+			_log("SEED RELOAD skipped (same seed)")
+		else:
+			forced_seed_text = _pending_seed_text
+			_log("SEED OVERRIDE -> %s" % forced_seed_text)
+			_init_seed()
+			_reset_run_state()
+	if dev_hud_enabled:
+		_hud_refresh_accum += _delta
+		if _hud_refresh_accum >= HUD_REFRESH_INTERVAL:
+			_hud_refresh_accum = 0.0
+			_update_hud()
 
 func _input(event: InputEvent) -> void:
 	if get_viewport().is_input_handled():
+		return
+	if is_instance_valid(_suspect_import_dialog) and _suspect_import_dialog.visible:
 		return
 	if _handle_dev_hotkeys(event):
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if is_instance_valid(_suspect_import_dialog) and _suspect_import_dialog.visible:
+		return
 	if _handle_dev_hotkeys(event):
 		get_viewport().set_input_as_handled()
 		return
@@ -78,14 +130,14 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 			close_overlay()
 			return true
 
-		var mode := DisplayServer.window_get_mode()
+		var mode: int = DisplayServer.window_get_mode()
 		if mode == DisplayServer.WINDOW_MODE_FULLSCREEN or mode == DisplayServer.WINDOW_MODE_EXCLUSIVE_FULLSCREEN:
 			_exit_fullscreen_to_windowed()
 			_log("ESC: fullscreen -> windowed")
 			return true
 
 		if dev_quit_requires_shift:
-			var key_event := event as InputEventKey
+			var key_event: InputEventKey = event as InputEventKey
 			if key_event != null and key_event.shift_pressed:
 				_log("ESC: quit")
 				get_tree().quit()
@@ -96,7 +148,7 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 			get_tree().quit()
 			return true
 
-	var wants_toggle := false
+	var wants_toggle: bool = false
 	if InputMap.has_action("dev_toggle_hud") and event.is_action_pressed("dev_toggle_hud"):
 		wants_toggle = true
 	if InputMap.has_action("dev_toggle") and event.is_action_pressed("dev_toggle"):
@@ -110,7 +162,12 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 		return true
 
 	if InputMap.has_action("dev_next_suspect") and event.is_action_pressed("dev_next_suspect"):
-		_log("HOTKEY F2 dev_next_suspect (not implemented yet)")
+		suspect_index += 1
+		_refresh_suspect_seed()
+		var sid: String = current_suspect.short_id() if current_suspect != null else "n/a"
+		var t: String = current_suspect.truth_label() if current_suspect != null else "n/a"
+		_log("HOTKEY F2 dev_next_suspect -> idx=%d seed=%s id=%s truth=%s" % [suspect_index, suspect_seed_text, sid, t])
+		_update_hud()
 		return true
 
 	if InputMap.has_action("dev_load_seed") and event.is_action_pressed("dev_load_seed"):
@@ -123,26 +180,44 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 		_log("HOTKEY F7 dev_seed_copy -> %s" % run_seed_text)
 		return true
 
-	if InputMap.has_action("dev_seed_reload_clipboard") and event.is_action_pressed("dev_seed_reload_clipboard"):
-		_log("HOTKEY F8 dev_seed_reload_clipboard")
-		var raw := DisplayServer.clipboard_get()
-		var parsed := _seed_parse(raw)
-		if parsed >= 0:
-			forced_seed_text = _seed_format(parsed)
-			_log("SEED OVERRIDE -> %s" % forced_seed_text)
-			_init_seed()
-			_reset_run_state()
+	if InputMap.has_action("dev_end_game") and event.is_action_pressed("dev_end_game"):
+		var k_end: InputEventKey = event as InputEventKey
+		if k_end != null and k_end.pressed and not k_end.echo and k_end.keycode == KEY_F12:
+			_log("HOTKEY F12 dev_end_game -> quit")
+			get_tree().quit()
 			return true
-		_open_seed_prompt()
-		return true
+		return false
 
 	if InputMap.has_action("dev_force_verdict") and event.is_action_pressed("dev_force_verdict"):
-		_log("HOTKEY F3 dev_force_verdict (not implemented yet)")
+		var event_id: int = event.get_instance_id()
+		if event_id != _last_force_verdict_event_id:
+			_last_force_verdict_event_id = event_id
+			_log("HOTKEY F3 dev_force_verdict (not implemented yet)")
 		return false
 
 	if InputMap.has_action("toggle_edge_pan") and event.is_action_pressed("toggle_edge_pan"):
-		_log("HOTKEY F4 toggle_edge_pan (not implemented here)")
+		var event_id: int = event.get_instance_id()
+		if event_id != _last_toggle_edge_pan_event_id:
+			_last_toggle_edge_pan_event_id = event_id
+			_log("HOTKEY F4 toggle_edge_pan")
 		return false
+
+	if dev_allow_suspect_io and event is InputEventKey:
+		var k: InputEventKey = event as InputEventKey
+		if k != null and k.pressed and not k.echo:
+			if k.keycode == KEY_F9:
+				_log("HOTKEY F9: use Ctrl+Shift+I for suspect import (F9 is not bound).")
+				return true
+			if k.keycode == KEY_F8:
+				_log("HOTKEY F8: do not use in-editor (Godot stops play). Use Ctrl+Shift+E for export.")
+				return true
+			# Editor-safe dev hotkeys (avoid F8 stop, F9 play bindings)
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_E:
+				_dev_export_suspect()
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_I:
+				_dev_import_suspect_clipboard_or_prompt()
+				return true
 
 	return false
 
@@ -172,18 +247,18 @@ func is_overlay_open() -> bool:
 	return overlay_open
 
 func _update_app_state() -> void:
-	var scene := get_tree().current_scene
+	var scene: Node = get_tree().current_scene
 	if scene == null:
 		if app_state != AppState.BOOT:
-			var old_state := app_state
+			var old_state: int = app_state
 			app_state = AppState.BOOT
 			if dev_log_state_changes:
 				_log("STATE -> %s" % _state_name(app_state))
 			_on_app_state_changed(old_state, app_state)
 		return
 
-	var n := scene.name
-	var new_state := AppState.MENU
+	var n: String = scene.name
+	var new_state: int = AppState.MENU
 	if n == "Game":
 		new_state = AppState.GAME
 	elif "Title" in n:
@@ -192,7 +267,7 @@ func _update_app_state() -> void:
 		new_state = AppState.BOOT
 
 	if new_state != app_state:
-		var old_state := app_state
+		var old_state: int = app_state
 		app_state = new_state
 		if dev_log_state_changes:
 			_log("STATE -> %s" % _state_name(app_state))
@@ -208,6 +283,8 @@ func set_run_state(new_state: int) -> void:
 func _on_app_state_changed(_from_state: int, _to_state: int) -> void:
 	if overlay_open:
 		close_overlay()
+	if _to_state == AppState.GAME:
+		_cache_camera()
 	_apply_state_policy("state")
 
 func _apply_state_policy(reason: String) -> void:
@@ -217,9 +294,9 @@ func _apply_state_policy(reason: String) -> void:
 	_policy_last_state = app_state
 	_policy_last_overlay_open = overlay_open
 
-	var in_game := app_state == AppState.GAME
-	var world_input := in_game and not overlay_open
-	var ui_input := not overlay_open
+	var in_game: bool = app_state == AppState.GAME
+	var world_input: bool = in_game and not overlay_open
+	var ui_input: bool = not overlay_open
 
 	_set_group_visible(GROUP_UI_GAME, in_game)
 	_set_group_visible(GROUP_UI_MENU, not in_game)
@@ -230,19 +307,19 @@ func _apply_state_policy(reason: String) -> void:
 		_log("POLICY (%s): in_game=%s overlay=%s world_input=%s ui_input=%s" % [reason, str(in_game), str(overlay_open), str(world_input), str(ui_input)])
 
 func _set_group_visible(group_name: StringName, visible: bool) -> void:
-	var nodes := get_tree().get_nodes_in_group(group_name)
+	var nodes: Array[Node] = get_tree().get_nodes_in_group(group_name)
 	for n in nodes:
 		if n is CanvasItem:
 			(n as CanvasItem).visible = visible
 
 func _set_group_input_enabled(group_name: StringName, enabled: bool) -> void:
-	var nodes := get_tree().get_nodes_in_group(group_name)
+	var nodes: Array[Node] = get_tree().get_nodes_in_group(group_name)
 	for n in nodes:
 		if n == null:
 			continue
 
 		if n is Control:
-			var c := n as Control
+			var c: Control = n as Control
 			if enabled:
 				if c.has_meta("__prev_mouse_filter"):
 					c.mouse_filter = int(c.get_meta("__prev_mouse_filter"))
@@ -253,7 +330,7 @@ func _set_group_input_enabled(group_name: StringName, enabled: bool) -> void:
 				c.mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 		if n is CollisionObject2D:
-			var co := n as CollisionObject2D
+			var co: CollisionObject2D = n as CollisionObject2D
 			if enabled:
 				if co.has_meta("__prev_pickable"):
 					co.input_pickable = bool(co.get_meta("__prev_pickable"))
@@ -283,7 +360,23 @@ func _install_hud() -> void:
 	_hud_label = Label.new()
 	_hud_label.name = DEV_HUD_LABEL_NAME
 	_hud_label.position = Vector2(12, 12)
+	_hud_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_hud_layer.add_child(_hud_label)
+
+	_hud_hotkeys_label = Label.new()
+	_hud_hotkeys_label.name = &"DevHotkeys"
+	_hud_hotkeys_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_layer.add_child(_hud_hotkeys_label)
+
+	_hud_event_log_label = Label.new()
+	_hud_event_log_label.name = &"DevEventLogLabel"
+	_hud_event_log_label.z_index = 1
+	_hud_event_log_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_event_log_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_hud_event_log_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_hud_event_log_label.clip_text = true
+	_hud_event_log_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_hud_layer.add_child(_hud_event_log_label)
 
 func _install_seed_prompt() -> void:
 	if is_instance_valid(_seed_dialog):
@@ -292,6 +385,12 @@ func _install_seed_prompt() -> void:
 	_seed_dialog = AcceptDialog.new()
 	_seed_dialog.title = "Load Seed"
 	_seed_dialog.exclusive = true
+	_seed_dialog.always_on_top = true
+	_seed_dialog.transient = true
+	_seed_dialog.unresizable = true
+	_seed_dialog.process_mode = Node.PROCESS_MODE_ALWAYS
+	_seed_dialog.set_process_input(true)
+	_seed_dialog.set_process_unhandled_input(true)
 	_seed_dialog.min_size = Vector2(560, 180)
 	_seed_dialog.close_requested.connect(_on_seed_dialog_closed)
 	_seed_dialog.confirmed.connect(_on_seed_dialog_confirmed)
@@ -304,17 +403,19 @@ func _install_seed_prompt() -> void:
 	_seed_container.add_theme_constant_override("margin_bottom", 12)
 	_seed_dialog.add_child(_seed_container)
 
-	var vbox := VBoxContainer.new()
+	var vbox: VBoxContainer = VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 8)
 	_seed_container.add_child(vbox)
 
 	_seed_label = Label.new()
 	_seed_label.text = "Current: "
+	_seed_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_seed_label)
 
 	_seed_line = LineEdit.new()
 	_seed_line.placeholder_text = "K11-XXXX or digits"
 	_seed_line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_seed_line.mouse_filter = Control.MOUSE_FILTER_STOP
 	_seed_line.text_changed.connect(_on_seed_line_text_changed)
 	vbox.add_child(_seed_line)
 
@@ -324,8 +425,11 @@ func _install_seed_prompt() -> void:
 func _open_seed_prompt() -> void:
 	if not is_instance_valid(_seed_dialog):
 		_install_seed_prompt()
-	var clipboard_text := DisplayServer.clipboard_get()
-	var parsed_clipboard := _seed_parse(clipboard_text)
+	_seed_prompt_prev_hud_visible = dev_hud_enabled
+	if dev_hud_enabled:
+		_set_dev_hud_visible(false)
+	var clipboard_text: String = DisplayServer.clipboard_get()
+	var parsed_clipboard: int = _seed_parse(clipboard_text)
 	if parsed_clipboard >= 0:
 		_seed_line.text = _seed_format(parsed_clipboard)
 	else:
@@ -336,21 +440,24 @@ func _open_seed_prompt() -> void:
 	call_deferred("_seed_prompt_focus")
 
 func _on_seed_dialog_confirmed() -> void:
-	var raw := _seed_line.text
+	var raw: String = _seed_line.text
 	if raw.strip_edges() == "":
+		if _seed_prompt_prev_hud_visible:
+			_set_dev_hud_visible(true)
 		return
-	var parsed := _seed_parse(raw)
+	var parsed: int = _seed_parse(raw)
 	if parsed < 0:
 		return
-	forced_seed_text = _seed_format(parsed)
-	_log("SEED OVERRIDE -> %s" % forced_seed_text)
-	_init_seed()
-	_reset_run_state()
+	_request_seed_reload(_seed_format(parsed))
+	if _seed_prompt_prev_hud_visible:
+		_set_dev_hud_visible(true)
 
 func _on_seed_dialog_closed() -> void:
 	if is_instance_valid(_seed_line):
 		_seed_line.text = ""
 	_update_seed_ok_button()
+	if _seed_prompt_prev_hud_visible:
+		_set_dev_hud_visible(true)
 
 func _on_seed_line_text_changed(_text: String) -> void:
 	_update_seed_ok_button()
@@ -364,6 +471,19 @@ func _update_seed_ok_button() -> void:
 	if is_instance_valid(_seed_ok_button) and is_instance_valid(_seed_line):
 		_seed_ok_button.disabled = _seed_line.text.strip_edges() == ""
 
+func _cache_camera() -> void:
+	if is_instance_valid(_camera_node):
+		return
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	_camera_node = root.find_child("Camera2D", true, false) as Camera2D
+	if _camera_node == null and not _camera_missing_logged:
+		_camera_missing_logged = true
+		_log("CAMERA: n/a (Camera2D not found in current scene)")
+	elif _camera_node != null:
+		_camera_missing_logged = false
+
 func _set_dev_hud_visible(visible: bool) -> void:
 	if visible and not is_instance_valid(_hud_layer):
 		_install_hud()
@@ -372,8 +492,12 @@ func _set_dev_hud_visible(visible: bool) -> void:
 		_hud_layer.visible = visible
 	if is_instance_valid(_hud_label):
 		_hud_label.visible = visible
+	if is_instance_valid(_hud_hotkeys_label):
+		_hud_hotkeys_label.visible = visible
+	if is_instance_valid(_hud_event_log_label):
+		_hud_event_log_label.visible = visible
 
-	var root := get_tree().root
+	var root: Node = get_tree().root
 	if root == null:
 		return
 
@@ -393,8 +517,52 @@ func _update_hud() -> void:
 
 	_cleanup_duplicate_hud_labels()
 
-	var overlay_text := overlay_id if overlay_open else "none"
-	_hud_label.text = "STATE: %s\nRUN: %s\nOVERLAY: %s\nHOTKEYS:\nF8 SeedFromClip\nF7 CopySeed\nF6 LoadSeed\nF4 EdgePan\nF3 Verdict?\nF2 Next?\nF1 HUD" % [_state_name(app_state), _run_state_name(run_state), overlay_text]
+	if _camera_node == null and app_state == AppState.GAME:
+		_cache_camera()
+
+	var overlay_text: String = overlay_id if overlay_open else "none"
+	var seed_text: String = run_seed_text
+	var camera_text: String = "n/a"
+	var edge_pan_text: String = "n/a"
+	if _camera_node != null:
+		var pos: Vector2 = _camera_node.global_position
+		var zoom: Vector2 = _camera_node.zoom
+		camera_text = "pos=(%d,%d) zoom=(%.2f,%.2f)" % [int(round(pos.x)), int(round(pos.y)), zoom.x, zoom.y]
+		if _camera_node.has_method("is_edge_pan_enabled"):
+			edge_pan_text = "ON" if _camera_node.call("is_edge_pan_enabled") else "OFF"
+	var camera_line: String = "CAMERA: %s edge_pan=%s" % [camera_text, edge_pan_text]
+	var hotkeys_text: String = "HOTKEYS:\nF12 EndGame\nCtrl+Shift+I ImportSuspect\nCtrl+Shift+E ExportSuspect\nF7 CopySeed\nF6 LoadSeed\nF4 EdgePan\nF3 Verdict?\nF2 Next?\nF1 HUD"
+	var seed64_text: String = SeedUtil.hex16(run_seed_u64)
+	_hud_label.text = "\n".join([
+		_format_hud_line("STATE", _state_name(app_state)),
+		_format_hud_line("RUN", _run_state_name(run_state)),
+		_format_hud_line("OVERLAY", overlay_text),
+		_format_hud_line("SEED", seed_text),
+		_format_hud_line("SEED64", seed64_text),
+		camera_line,
+		_format_hud_line("SUSPECT_IDX", str(suspect_index)),
+		_format_hud_line("SUSPECT_SEED", suspect_seed_text),
+		_format_hud_line("SUSPECT_ID", current_suspect.short_id() if current_suspect != null else "n/a"),
+		_format_hud_line("SILH", current_suspect.silhouette_label if current_suspect != null else "n/a"),
+		_format_hud_line("DEADLINE", current_suspect.get_deadline_label() if current_suspect != null else "n/a"),
+		_format_hud_line("TRUTH", current_suspect.truth_label() if current_suspect != null else "n/a"),
+		"",
+	])
+	if is_instance_valid(_hud_hotkeys_label):
+		_hud_hotkeys_label.text = hotkeys_text
+		var viewport_size: Vector2 = get_viewport().get_visible_rect().size
+		var hotkeys_size: Vector2 = _hud_hotkeys_label.get_minimum_size()
+		_hud_hotkeys_label.position = Vector2(12, max(viewport_size.y - hotkeys_size.y - 12.0, 12.0))
+	if is_instance_valid(_hud_event_log_label):
+		_update_event_log_display()
+		var viewport_size2: Vector2 = get_viewport().get_visible_rect().size
+		_event_log_visible_lines = min(DEV_EVENT_LOG_VISIBLE, max(1, _dev_event_log.size()))
+		var log_height: float = DEV_EVENT_LOG_LINE_HEIGHT * float(_event_log_visible_lines)
+		var log_y: float = 12.0
+		var log_width: float = min(DEV_EVENT_LOG_WIDTH, viewport_size2.x - 24.0)
+		var log_x: float = max(viewport_size2.x - log_width - 12.0, 12.0)
+		_hud_event_log_label.position = Vector2(log_x, log_y)
+		_hud_event_log_label.size = Vector2(log_width, log_height)
 
 	if dev_log_state_changes and run_state != _last_logged_run_state:
 		_last_logged_run_state = run_state
@@ -405,7 +573,7 @@ func _update_hud() -> void:
 		_last_logged_overlay_id = overlay_id
 
 func _cleanup_duplicate_hud_labels() -> void:
-	var root := get_tree().root
+	var root: Node = get_tree().root
 	if root == null:
 		return
 	if not is_instance_valid(_hud_layer):
@@ -422,13 +590,257 @@ func _cleanup_duplicate_hud_labels() -> void:
 
 	for label in root.find_children(String(DEV_HUD_LABEL_NAME), "Label", true, false):
 		if label is Label and label != _hud_label:
-			var other := label as Label
+			var other: Label = label as Label
 			other.visible = false
+
+	for label in root.find_children("DevEventLogLabel", "Label", true, false):
+		if label is Label and label != _hud_event_log_label:
+			var other_log: Label = label as Label
+			other_log.visible = false
 
 func _log(msg: String) -> void:
 	if not dev_log_enabled:
 		return
-	print("[K11] %s %s" % [str(Time.get_ticks_msec()), msg])
+	var ticks: int = Time.get_ticks_msec()
+	var line: String = "%s %s" % [str(ticks), msg]
+	print("[K11] %s" % line)
+	_dev_event_log.append(line)
+	if _dev_event_log.size() > DEV_EVENT_LOG_MAX:
+		_dev_event_log = _dev_event_log.slice(_dev_event_log.size() - DEV_EVENT_LOG_MAX, _dev_event_log.size())
+	_update_event_log_display()
+
+func _update_event_log_display() -> void:
+	if not dev_hud_enabled:
+		return
+	if not is_instance_valid(_hud_event_log_label):
+		return
+	var count: int = min(_event_log_visible_lines, _dev_event_log.size())
+	var start: int = max(0, _dev_event_log.size() - count)
+	_hud_event_log_label.text = "\n".join(_dev_event_log.slice(start, _dev_event_log.size()))
+
+func _request_seed_reload(seed_text: String) -> void:
+	_pending_seed_text = seed_text
+	_pending_seed_reload = true
+	_log("SEED RELOAD REQUESTED -> %s" % _pending_seed_text)
+
+func _format_hud_line(label: String, value: String) -> String:
+	return "%s: %s" % [label.rpad(12, " "), value]
+
+func _dev_suspect_export_path() -> String:
+	var seed_slug: String = run_seed_text.replace(":", "_").replace("/", "_")
+	return "user://dev/suspect_%s_idx%03d.json" % [seed_slug, suspect_index]
+
+func _dev_export_suspect() -> void:
+	if current_suspect == null:
+		_log("SUSPECT_EXPORT: no current suspect")
+		return
+	var json: String = SuspectIO.to_json(current_suspect, true)
+	var fp_obj: String = SuspectIO.fingerprint_suspect(current_suspect)
+	var fp_json: String = SuspectIO.fingerprint_json(json)
+	DisplayServer.clipboard_set(json)
+	var fp_clip: String = SuspectIO.fingerprint_json(DisplayServer.clipboard_get())
+
+	var path: String = _dev_suspect_export_path()
+	var ok: bool = SuspectIO.write_text(path, json)
+	var last_path: String = "user://dev/last_suspect.json"
+	var ok_last: bool = SuspectIO.write_text(last_path, json)
+	if ok:
+		if ok_last:
+			_log("SUSPECT_EXPORT ok idx=%d id=%s truth=%s fp_obj=%s fp_json=%s fp_clip=%s -> %s + last_suspect.json (and clipboard)" % [
+				suspect_index,
+				current_suspect.short_id(),
+				current_suspect.truth_label(),
+				fp_obj.substr(0, 12),
+				fp_json.substr(0, 12),
+				fp_clip.substr(0, 12),
+				path
+			])
+		else:
+			_log("SUSPECT_EXPORT ok idx=%d id=%s truth=%s fp_obj=%s fp_json=%s fp_clip=%s -> %s (last_suspect.json FAILED, clipboard set)" % [
+				suspect_index,
+				current_suspect.short_id(),
+				current_suspect.truth_label(),
+				fp_obj.substr(0, 12),
+				fp_json.substr(0, 12),
+				fp_clip.substr(0, 12),
+				path
+			])
+	else:
+		_log("SUSPECT_EXPORT FAILED fp_obj=%s fp_json=%s fp_clip=%s -> %s (clipboard still set)" % [
+			fp_obj.substr(0, 12),
+			fp_json.substr(0, 12),
+			fp_clip.substr(0, 12),
+			path
+		])
+	if fp_obj != "" and fp_json != "" and fp_clip != "" and (fp_obj != fp_json or fp_json != fp_clip):
+		_log("SUSPECT_EXPORT WARN mismatch fp_obj=%s fp_json=%s fp_clip=%s" % [
+			fp_obj.substr(0, 12),
+			fp_json.substr(0, 12),
+			fp_clip.substr(0, 12)
+		])
+
+func _dev_import_suspect_clipboard_or_prompt() -> void:
+	if is_instance_valid(_suspect_import_dialog) and _suspect_import_dialog.visible:
+		return
+	var now_msec: int = Time.get_ticks_msec()
+	if now_msec - _last_import_prompt_time_msec < 200:
+		return
+	var clip: String = DisplayServer.clipboard_get()
+	var fp_src: String = SuspectIO.fingerprint_json(clip)
+	var s: SuspectData = SuspectIO.from_json(clip)
+	if s != null:
+		_apply_imported_suspect(s, "clipboard")
+		var fp_obj: String = SuspectIO.fingerprint_suspect(s)
+		_log("SUSPECT_IMPORT ok src=clipboard idx=%d id=%s truth=%s fp_src=%s fp_obj=%s" % [
+			s.suspect_index,
+			s.short_id(),
+			s.truth_label(),
+			fp_src.substr(0, 12),
+			fp_obj.substr(0, 12)
+		])
+		if fp_src != "" and fp_obj != "" and fp_src != fp_obj:
+			_log("SUSPECT_IMPORT WARN fp_src=%s fp_obj=%s" % [fp_src.substr(0, 12), fp_obj.substr(0, 12)])
+		return
+
+	var last_path: String = "user://dev/last_suspect.json"
+	var last_text: String = SuspectIO.read_text(last_path)
+	var s2: SuspectData = SuspectIO.from_json(last_text)
+	if s2 != null:
+		_apply_imported_suspect(s2, "file:last_suspect")
+		return
+
+	_log("SUSPECT_IMPORT: invalid/empty clipboard JSON -> opening paste dialog")
+	var prefill: String = clip
+	_last_import_prompt_time_msec = now_msec
+	_open_suspect_import_prompt(prefill)
+
+func _install_suspect_import_prompt() -> void:
+	if is_instance_valid(_suspect_import_dialog):
+		return
+
+	_suspect_import_dialog = AcceptDialog.new()
+	_suspect_import_dialog.title = "Import Suspect JSON"
+	_suspect_import_dialog.exclusive = true
+	_suspect_import_dialog.always_on_top = true
+	_suspect_import_dialog.transient = true
+	_suspect_import_dialog.unresizable = false
+	_suspect_import_dialog.dialog_hide_on_ok = false
+	_suspect_import_dialog.process_mode = Node.PROCESS_MODE_ALWAYS
+	_suspect_import_dialog.set_process_input(true)
+	_suspect_import_dialog.set_process_unhandled_input(true)
+	_suspect_import_dialog.min_size = Vector2(860, 520)
+	_suspect_import_dialog.close_requested.connect(_on_suspect_import_closed)
+	_suspect_import_dialog.confirmed.connect(_on_suspect_import_confirmed)
+	add_child(_suspect_import_dialog)
+
+	var container: MarginContainer = MarginContainer.new()
+	container.add_theme_constant_override("margin_left", 12)
+	container.add_theme_constant_override("margin_right", 12)
+	container.add_theme_constant_override("margin_top", 12)
+	container.add_theme_constant_override("margin_bottom", 12)
+	_suspect_import_dialog.add_child(container)
+
+	var vbox: VBoxContainer = VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 8)
+	container.add_child(vbox)
+
+	_suspect_import_label = Label.new()
+	_suspect_import_label.text = "Paste suspect JSON (must include schema_version=%d)" % SuspectData.SCHEMA_VERSION
+	_suspect_import_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_suspect_import_label)
+
+	_suspect_import_hint_label = Label.new()
+	_suspect_import_hint_label.text = "Tip: Ctrl+Shift+E exports JSON to clipboard. Ctrl+Shift+I imports (clipboard or prompt). F7 copies seed (not JSON)."
+	_suspect_import_hint_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_suspect_import_hint_label)
+
+	_suspect_import_error_label = Label.new()
+	_suspect_import_error_label.text = ""
+	_suspect_import_error_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vbox.add_child(_suspect_import_error_label)
+
+	_suspect_import_text = TextEdit.new()
+	_suspect_import_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_suspect_import_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_suspect_import_text.wrap_mode = TextEdit.LINE_WRAPPING_NONE
+	_suspect_import_text.focus_mode = Control.FOCUS_ALL
+	_suspect_import_text.mouse_filter = Control.MOUSE_FILTER_STOP
+	vbox.add_child(_suspect_import_text)
+
+func _open_suspect_import_prompt(prefill: String) -> void:
+	if not is_instance_valid(_suspect_import_dialog):
+		_install_suspect_import_prompt()
+	if _suspect_import_dialog.visible:
+		_suspect_import_dialog.move_to_foreground()
+		_suspect_import_dialog.grab_focus()
+		call_deferred("_suspect_import_focus")
+		return
+
+	_suspect_import_prev_hud_visible = dev_hud_enabled
+	if dev_hud_enabled:
+		_set_dev_hud_visible(false)
+
+	if is_instance_valid(_suspect_import_error_label):
+		_suspect_import_error_label.text = ""
+	_suspect_import_text.text = prefill
+	_suspect_import_dialog.popup_centered(Vector2i(860, 520))
+	call_deferred("_suspect_import_activate")
+
+func _suspect_import_focus() -> void:
+	if is_instance_valid(_suspect_import_text):
+		_suspect_import_text.grab_focus()
+		_suspect_import_text.set_caret_line(0)
+		_suspect_import_text.set_caret_column(0)
+		_suspect_import_text.select_all()
+		_suspect_import_text.select_all()
+
+func _suspect_import_focus_and_select_all() -> void:
+	if is_instance_valid(_suspect_import_text):
+		_suspect_import_text.grab_focus()
+		_suspect_import_text.select_all()
+
+func _suspect_import_activate() -> void:
+	if not is_instance_valid(_suspect_import_dialog):
+		return
+	_suspect_import_dialog.move_to_foreground()
+	_suspect_import_dialog.grab_focus()
+	_suspect_import_focus_and_select_all()
+
+func _on_suspect_import_confirmed() -> void:
+	var text: String = _suspect_import_text.text
+	var s: SuspectData = SuspectIO.from_json(text)
+	if s == null:
+		if is_instance_valid(_suspect_import_error_label):
+			_suspect_import_error_label.text = "Invalid JSON or schema_version mismatch (expected schema_version=%d)." % SuspectData.SCHEMA_VERSION
+		_log("SUSPECT_IMPORT FAILED: invalid JSON or schema_version mismatch")
+		call_deferred("_suspect_import_focus_and_select_all")
+		return
+	_apply_imported_suspect(s, "paste")
+	_suspect_import_dialog.hide()
+	_on_suspect_import_closed()
+
+func _on_suspect_import_closed() -> void:
+	if is_instance_valid(_suspect_import_text):
+		_suspect_import_text.text = ""
+	if _suspect_import_prev_hud_visible:
+		_set_dev_hud_visible(true)
+
+func _apply_imported_suspect(s: SuspectData, source: String) -> void:
+	current_suspect = s
+
+	run_seed_text = s.run_seed_text
+	run_seed_u64 = s.run_seed_u64
+	run_seed_value = _seed_parse(run_seed_text)
+
+	suspect_index = s.suspect_index
+	suspect_seed_value = s.suspect_seed_u64
+	suspect_seed_text = "K11S-%s" % SeedUtil.hex16(suspect_seed_value)
+
+	var fp: String = SuspectIO.fingerprint_suspect(s)
+	var sid: String = s.short_id()
+	var t: String = s.truth_label()
+	_log("SUSPECT_IMPORT ok src=%s fp=%s idx=%d id=%s truth=%s" % [source, fp.substr(0, 12), suspect_index, sid, t])
+	_update_hud()
 
 func _state_name(s: int) -> String:
 	match s:
@@ -451,19 +863,19 @@ func _exit_fullscreen_to_windowed() -> void:
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 
-	var target_size := Vector2i(1280, 720)
+	var target_size: Vector2i = Vector2i(1280, 720)
 	DisplayServer.window_set_size(target_size)
 
-	var screen_size := DisplayServer.screen_get_size()
-	var pos := (screen_size - target_size) / 2
+	var screen_size: Vector2i = DisplayServer.screen_get_size()
+	var pos: Vector2i = (screen_size - target_size) / 2
 	DisplayServer.window_set_position(pos)
 
 func _apply_overlay_lock(is_open: bool) -> void:
-	var scene := get_tree().current_scene
+	var scene: Node = get_tree().current_scene
 	if scene == null:
 		return
 
-	var cams := scene.find_children("", "Camera2D", true, false)
+	var cams: Array[Node] = scene.find_children("", "Camera2D", true, false)
 	for cam in cams:
 		if cam != null and cam.has_method("set_overlay_open"):
 			cam.call("set_overlay_open", is_open)
@@ -472,21 +884,24 @@ func _reset_run_state() -> void:
 	if overlay_open:
 		close_overlay()
 	run_state = RunState.IDLE
+	suspect_index = 0
+	_refresh_suspect_seed()
+	_log("SUSPECT_STREAM reset idx=%d seed=%s" % [suspect_index, suspect_seed_text])
 	_apply_state_policy("seed")
 	_update_hud()
 
 func _init_seed() -> void:
-	var seed_value := 0
-	var has_seed := false
+	var seed_value: int = 0
+	var has_seed: bool = false
 	if forced_seed_text != "":
-		var forced_parsed := _seed_parse(forced_seed_text)
+		var forced_parsed: int = _seed_parse(forced_seed_text)
 		if forced_parsed >= 0:
 			seed_value = forced_parsed
 			has_seed = true
 	else:
 		for arg in OS.get_cmdline_args():
 			if arg.begins_with("--seed="):
-				var cmd_value := _seed_parse(arg.substr(7))
+				var cmd_value: int = _seed_parse(arg.substr(7))
 				if cmd_value >= 0:
 					seed_value = cmd_value
 					has_seed = true
@@ -498,6 +913,11 @@ func _init_seed() -> void:
 	run_seed_value = seed_value
 	run_seed_text = _seed_format(seed_value)
 	_log("SEED = %s (%d)" % [run_seed_text, run_seed_value])
+	run_seed_u64 = SeedUtil.normalize_seed(run_seed_value)
+	suspect_index = 0
+	_refresh_suspect_seed()
+	_log("SEED64 = %s" % SeedUtil.hex16(run_seed_u64))
+	_log("SUSPECT_STREAM init idx=%d seed=%s" % [suspect_index, suspect_seed_text])
 
 func _seed_format(v: int) -> String:
 	if v < 0:
@@ -505,20 +925,20 @@ func _seed_format(v: int) -> String:
 	return "K11-%s" % _to_base36(v)
 
 func _seed_parse(s: String) -> int:
-	var text := s.strip_edges()
+	var text: String = s.strip_edges()
 	if text == "":
 		return -1
 
-	var upper := text.to_upper()
+	var upper: String = text.to_upper()
 	if upper.begins_with("K11-"):
-		var suffix := text.substr(4).strip_edges()
+		var suffix: String = text.substr(4).strip_edges()
 		if suffix == "":
 			return -1
 		return _from_base36(suffix)
 
-	var digits_only := true
+	var digits_only: bool = true
 	for i in text.length():
-		var ch := text[i]
+		var ch: String = text[i]
 		if ch < "0" or ch > "9":
 			digits_only = false
 			break
@@ -532,23 +952,28 @@ func get_seed_display() -> String:
 func _to_base36(v: int) -> String:
 	if v == 0:
 		return "0"
-	var chars := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	var value := v
-	var result := ""
+	var chars: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	var value: int = v
+	var result: String = ""
 	while value > 0:
-		var idx := value % 36
+		var idx: int = value % 36
 		result = chars[idx] + result
 		value = int(value / 36)
 	return result
 
 func _from_base36(s: String) -> int:
-	var chars := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	var value := 0
-	var upper := s.strip_edges().to_upper()
+	var chars: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	var value: int = 0
+	var upper: String = s.strip_edges().to_upper()
 	for i in upper.length():
-		var ch := upper[i]
-		var idx := chars.find(ch)
+		var ch: String = upper[i]
+		var idx: int = chars.find(ch)
 		if idx < 0:
 			return -1
 		value = value * 36 + idx
 	return value
+
+func _refresh_suspect_seed() -> void:
+	suspect_seed_value = SeedUtil.derive_seed(run_seed_u64, "suspect", suspect_index)
+	suspect_seed_text = "K11S-%s" % SeedUtil.hex16(suspect_seed_value)
+	current_suspect = SuspectFactory.generate(run_seed_u64, run_seed_text, suspect_index)

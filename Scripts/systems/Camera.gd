@@ -13,6 +13,9 @@ extends Camera2D
 func set_overlay_open(open: bool) -> void:
 	is_overlay_open = open
 
+func is_edge_pan_enabled() -> bool:
+	return mouse_pan_enabled
+
 var _default_position: Vector2 = Vector2.ZERO
 
 func _ready() -> void:
