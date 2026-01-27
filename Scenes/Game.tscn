@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3 uid="uid://skkut8fchrar"]
+[gd_scene load_steps=25 format=3 uid="uid://skkut8fchrar"]
 
 [ext_resource type="Texture2D" uid="uid://dvx87r175v28j" path="res://Assets/Image Assets/Wall.PNG" id="1_iukft"]
 [ext_resource type="Texture2D" uid="uid://bip8s6yw33qga" path="res://Assets/Image Assets/Desk.PNG" id="2_gl6un"]
@@ -22,8 +22,11 @@
 [ext_resource type="Script" uid="uid://43jbfsjc12lj" path="res://Scripts/systems/Camera.gd" id="20_i1pr2"]
 [ext_resource type="Texture2D" uid="uid://dxiuk1bsyglk3" path="res://Assets/Image Assets/IMG_0930.PNG" id="20_rajel"]
 [ext_resource type="Texture2D" uid="uid://coe60tqemvxlo" path="res://Assets/Image Assets/image0.png" id="21_vvhu1"]
+[ext_resource type="Script" uid="uid://cbg4cbgxq4aoh" path="res://ui/TabBar.gd" id="22_tabbar"]
+[ext_resource type="Script" uid="uid://ydpd2xq4cb52" path="res://ui/EvidenceLogPanel.gd" id="23_evidence_log"]
 
 [node name="Game" type="Node2D"]
+metadata/_edit_lock_ = true
 
 [node name="Wall" type="Sprite2D" parent="."]
 texture = ExtResource("1_iukft")
@@ -47,6 +50,8 @@ texture = ExtResource("6_2irst")
 texture = ExtResource("8_bf53h")
 
 [node name="Panel" type="Sprite2D" parent="."]
+visible = false
+light_mask = 14
 texture = ExtResource("8_tfod6")
 
 [node name="Alarm" type="Sprite2D" parent="."]
@@ -100,3 +105,130 @@ limit_bottom = 720
 editor_draw_limits = true
 editor_draw_drag_margin = true
 script = ExtResource("20_i1pr2")
+metadata/_edit_lock_ = true
+
+[node name="HudRoot" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -75.0
+offset_bottom = -75.0
+grow_horizontal = 2
+grow_vertical = 2
+scale = Vector2(3.15, 3.15)
+size_flags_vertical = 4
+mouse_filter = 2
+metadata/_edit_lock_ = true
+
+[node name="MockupOverlay" type="TextureRect" parent="HudRoot"]
+modulate = Color(1, 1, 1, 0.35)
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+stretch_mode = 5
+
+[node name="BarBg" type="ColorRect" parent="HudRoot"]
+layout_mode = 0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = 140.0
+offset_top = -46.0
+offset_right = -140.0
+offset_bottom = 46.0
+mouse_filter = 2
+color = Color(0, 0, 0, 0.35)
+
+[node name="EvidenceLogPanel" type="PanelContainer" parent="HudRoot"]
+visible = false
+layout_mode = 0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -260.0
+offset_right = -16.0
+offset_bottom = -90.0
+script = ExtResource("23_evidence_log")
+
+[node name="Scroll" type="ScrollContainer" parent="HudRoot/EvidenceLogPanel"]
+layout_mode = 2
+
+[node name="EvidenceRichText" type="RichTextLabel" parent="HudRoot/EvidenceLogPanel/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="BottomRow" type="HBoxContainer" parent="HudRoot"]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -333.5
+offset_top = -15.5
+offset_right = 333.5
+offset_bottom = 15.5
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+alignment = 1
+
+[node name="TabsBar" type="HBoxContainer" parent="HudRoot/BottomRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.62
+mouse_filter = 2
+script = ExtResource("22_tabbar")
+
+[node name="PROFILE" type="Button" parent="HudRoot/BottomRow/TabsBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "PROFILE"
+
+[node name="TIMELINE" type="Button" parent="HudRoot/BottomRow/TabsBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "TIMELINE"
+
+[node name="ALIBI" type="Button" parent="HudRoot/BottomRow/TabsBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "ALIBI"
+
+[node name="CAPABILITY" type="Button" parent="HudRoot/BottomRow/TabsBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "CAPABILITY"
+
+[node name="MOTIVE" type="Button" parent="HudRoot/BottomRow/TabsBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "MOTIVE"
+
+[node name="VerdictBar" type="HBoxContainer" parent="HudRoot/BottomRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_stretch_ratio = 0.38
+mouse_filter = 2
+
+[node name="CLEAR" type="Button" parent="HudRoot/BottomRow/VerdictBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "CLEAR"
+
+[node name="CONVICT" type="Button" parent="HudRoot/BottomRow/VerdictBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "CONVICT"
+
+[node name="SCAPEGOAT" type="Button" parent="HudRoot/BottomRow/VerdictBar"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "SCAPEGOAT"

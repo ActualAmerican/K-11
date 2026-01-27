@@ -16,6 +16,30 @@ var suspect_index: int = 0
 var suspect_seed_value: int = 0
 var suspect_seed_text: String = ""
 var current_suspect: SuspectData = null
+# --- Evidence UI (5.2) ---
+var _tabs_bar: Node = null
+var _evidence_panel: Control = null
+var _evidence_dimmer: ColorRect = null
+var _evidence_active_tab: String = ""
+const OVERLAY_EVIDENCE_ID := "EVIDENCE"
+const OVERLAY_CASE_FOLDER_ID := "CASE_FOLDER"
+var _case_folder: Sprite2D = null
+var _case_folder_base_modulate: Color = Color(1, 1, 1, 1)
+var _case_folder_image: Image = null
+var _case_folder_image_size: Vector2i = Vector2i.ZERO
+var _case_folder_outline: Node = null
+var _case_folder_hover: bool = false
+var _pending_verdict_id: String = ""
+var _verdict_buttons: Array[Button] = []
+var _verdict_committed: bool = false
+var _verdict_choice: String = ""
+var _verdict_overlay: Node = null
+var _last_verdict: String = ""
+var _last_truth_guilty: bool = false
+var _last_verdict_correct: bool = false
+var _punishment_pending: bool = false
+var _pending_run_fail: bool = false
+var _scapegoat_count: int = 0
 
 var overlay_open: bool = false
 var overlay_id: String = ""
@@ -28,6 +52,7 @@ var overlay_id: String = ""
 @export var dev_log_state_changes: bool = true
 @export var dev_log_overlays: bool = true
 @export var dev_allow_suspect_io: bool = true
+@export var dev_enable_scapegoat: bool = true
 
 var _hud_layer: CanvasLayer
 var _hud_label: Label
@@ -80,15 +105,18 @@ var _pending_seed_text: String = ""
 func _ready() -> void:
 	_overlay_manager = preload("res://Scripts/systems/OverlayManager.gd").new()
 	_overlay_manager.name = &"OverlayManager"
+	_overlay_manager.call("set_controller", self)
 	add_child(_overlay_manager)
 	_init_seed()
 	_install_hud()
+	_init_verdict_flow_ui()
 	_install_seed_prompt()
 	_set_dev_hud_visible(dev_hud_enabled)
 	_cleanup_duplicate_hud_labels()
 	_cache_camera()
 	_update_app_state()
 	_apply_state_policy("ready")
+	_cache_case_folder()
 	_update_hud()
 	_log("GameController ready")
 
@@ -109,6 +137,19 @@ func _process(_delta: float) -> void:
 			_hud_refresh_accum = 0.0
 			_update_hud()
 
+	if app_state == AppState.GAME and not overlay_open:
+		if _case_folder == null:
+			_cache_case_folder()
+		if _camera_node == null:
+			_cache_camera()
+		if _case_folder != null and _camera_node != null:
+			var mouse_world: Vector2 = _camera_node.get_global_mouse_position()
+			_case_folder_hover = _is_mouse_over_case_folder(mouse_world)
+			if _case_folder_outline is CanvasItem:
+				(_case_folder_outline as CanvasItem).visible = _case_folder_hover
+			if not _case_folder_hover:
+				_clear_folder_highlight()
+
 func _input(event: InputEvent) -> void:
 	if get_viewport().is_input_handled():
 		return
@@ -123,6 +164,25 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _handle_dev_hotkeys(event):
 		get_viewport().set_input_as_handled()
 		return
+
+	if app_state != AppState.GAME:
+		return
+	if overlay_open:
+		return
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index == MOUSE_BUTTON_LEFT and mouse_event.pressed:
+			if _camera_node == null:
+				_cache_camera()
+			if _case_folder == null:
+				_cache_case_folder()
+			if _camera_node == null:
+				return
+			var mouse_world: Vector2 = _camera_node.get_global_mouse_position()
+			if _is_mouse_over_case_folder(mouse_world):
+				var payload := _build_case_folder_payload()
+				open_overlay(OVERLAY_CASE_FOLDER_ID, payload)
+				get_viewport().set_input_as_handled()
 
 func _handle_dev_hotkeys(event: InputEvent) -> bool:
 	if dev_allow_escape_hatch and event.is_action_pressed("ui_cancel"):
@@ -162,8 +222,9 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 		return true
 
 	if InputMap.has_action("dev_next_suspect") and event.is_action_pressed("dev_next_suspect"):
-		suspect_index += 1
-		_refresh_suspect_seed()
+		if overlay_open and (overlay_id == OVERLAY_EVIDENCE_ID or overlay_id == "VERDICT_RESULT"):
+			close_overlay()
+		_advance_to_next_suspect()
 		var sid: String = current_suspect.short_id() if current_suspect != null else "n/a"
 		var t: String = current_suspect.truth_label() if current_suspect != null else "n/a"
 		_log("HOTKEY F2 dev_next_suspect -> idx=%d seed=%s id=%s truth=%s" % [suspect_index, suspect_seed_text, sid, t])
@@ -221,11 +282,11 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 
 	return false
 
-func open_overlay(id: String) -> void:
+func open_overlay(id: String, payload: Dictionary = {}) -> void:
 	overlay_open = true
 	overlay_id = id
-	if _overlay_manager != null:
-		_overlay_manager.call("open", id)
+	if id != "VERDICT_RESULT" and _overlay_manager != null:
+		_overlay_manager.call("open", id, payload)
 	set_run_state(RunState.OVERLAY)
 	if dev_log_overlays:
 		_log("OVERLAY open: %s" % id)
@@ -233,10 +294,17 @@ func open_overlay(id: String) -> void:
 	_apply_state_policy("overlay")
 
 func close_overlay() -> void:
-	if _overlay_manager != null:
-		_overlay_manager.call("close")
+	if overlay_id == OVERLAY_EVIDENCE_ID:
+		_hide_evidence_overlay()
+	elif overlay_id == "VERDICT_RESULT":
+		if _verdict_overlay != null and _verdict_overlay.has_method("hide_overlay"):
+			_verdict_overlay.call("hide_overlay")
+	else:
+		if _overlay_manager != null:
+			_overlay_manager.call("close")
 	overlay_open = false
 	overlay_id = ""
+	_clear_folder_highlight()
 	set_run_state(RunState.IDLE)
 	if dev_log_overlays:
 		_log("OVERLAY close")
@@ -285,6 +353,10 @@ func _on_app_state_changed(_from_state: int, _to_state: int) -> void:
 		close_overlay()
 	if _to_state == AppState.GAME:
 		_cache_camera()
+		_cache_evidence_ui()
+		_hide_evidence_overlay()
+		_cache_case_folder()
+		_init_verdict_flow_ui()
 	_apply_state_policy("state")
 
 func _apply_state_policy(reason: String) -> void:
@@ -295,8 +367,9 @@ func _apply_state_policy(reason: String) -> void:
 	_policy_last_overlay_open = overlay_open
 
 	var in_game: bool = app_state == AppState.GAME
+	var evidence_open: bool = overlay_open and overlay_id == OVERLAY_EVIDENCE_ID
 	var world_input: bool = in_game and not overlay_open
-	var ui_input: bool = not overlay_open
+	var ui_input: bool = not overlay_open or evidence_open
 
 	_set_group_visible(GROUP_UI_GAME, in_game)
 	_set_group_visible(GROUP_UI_MENU, not in_game)
@@ -484,6 +557,196 @@ func _cache_camera() -> void:
 	elif _camera_node != null:
 		_camera_missing_logged = false
 
+func _cache_evidence_ui() -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+
+	_tabs_bar = root.find_child("TabsBar", true, false)
+	if _tabs_bar != null and _tabs_bar.has_signal("tab_changed"):
+		var cb := Callable(self, "_on_tabs_bar_tab_changed")
+		if not _tabs_bar.is_connected("tab_changed", cb):
+			_tabs_bar.connect("tab_changed", cb)
+
+	_evidence_panel = root.find_child("EvidenceLogPanel", true, false) as Control
+	if _evidence_panel == null:
+		_log("EVIDENCE: n/a (EvidenceLogPanel node not found)")
+		return
+
+	# Hide by default (only visible on tab click)
+	_evidence_panel.visible = false
+	if _evidence_panel.has_method("set"):
+		_evidence_panel.set("debug_force_visible", false)
+	_evidence_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	_evidence_panel.z_index = 2000
+
+	# Ensure we have a dimmer behind it that blocks clicks
+	var parent := _evidence_panel.get_parent()
+	if parent is Control:
+		_evidence_dimmer = (parent as Control).get_node_or_null("EvidenceDimmer") as ColorRect
+		if _evidence_dimmer == null:
+			_evidence_dimmer = ColorRect.new()
+			_evidence_dimmer.name = "EvidenceDimmer"
+			_evidence_dimmer.color = Color(0, 0, 0, 0.55)
+			_evidence_dimmer.visible = false
+			_evidence_dimmer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			(parent as Control).add_child(_evidence_dimmer)
+			var panel_index: int = (parent as Control).get_children().find(_evidence_panel)
+			if panel_index >= 0:
+				(parent as Control).move_child(_evidence_dimmer, panel_index)
+
+			_evidence_dimmer.gui_input.connect(func(ev: InputEvent) -> void:
+				if ev is InputEventMouseButton and (ev as InputEventMouseButton).pressed:
+					if overlay_open and overlay_id == OVERLAY_EVIDENCE_ID:
+						close_overlay()
+			)
+
+		_evidence_dimmer.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_evidence_dimmer.offset_left = 0
+		_evidence_dimmer.offset_top = 0
+		_evidence_dimmer.offset_right = 0
+		_evidence_dimmer.offset_bottom = 0
+		_evidence_dimmer.visible = false
+		_evidence_dimmer.z_index = 1999
+
+	# Force the panel to behave like a centered popup (no .tscn edits)
+	_evidence_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_evidence_panel.offset_left = -260
+	_evidence_panel.offset_top = -140
+	_evidence_panel.offset_right = 260
+	_evidence_panel.offset_bottom = 140
+	if _evidence_panel.has_method("clear"):
+		_evidence_panel.call("clear")
+
+	var close_button := _evidence_panel.get_node_or_null("EvidenceClose") as Button
+	if close_button == null:
+		close_button = Button.new()
+		close_button.name = "EvidenceClose"
+		close_button.text = "X"
+		close_button.mouse_filter = Control.MOUSE_FILTER_STOP
+		close_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+		close_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		close_button.anchor_right = 1.0
+		close_button.offset_left = -32
+		close_button.offset_top = 6
+		close_button.offset_right = -6
+		close_button.offset_bottom = 30
+		_evidence_panel.add_child(close_button)
+		close_button.pressed.connect(func() -> void:
+			close_overlay()
+		)
+
+func _cache_case_folder() -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	if _case_folder != null:
+		return
+	var folder_node := root.find_child("Folder", true, false)
+	if folder_node is Sprite2D:
+		_case_folder = folder_node as Sprite2D
+		_case_folder_base_modulate = _case_folder.modulate
+		var hit := _case_folder.get_node_or_null("FolderHit")
+		if hit != null:
+			hit.queue_free()
+		if _case_folder.texture != null:
+			_case_folder_image = _case_folder.texture.get_image()
+			if _case_folder_image != null:
+				_case_folder_image_size = _case_folder_image.get_size()
+		_ensure_case_folder_outline()
+
+func _is_mouse_over_case_folder(mouse_world: Vector2) -> bool:
+	if _case_folder == null or _case_folder.texture == null:
+		return false
+	var local: Vector2 = _case_folder.to_local(mouse_world)
+	var size: Vector2 = _case_folder.texture.get_size()
+	var rect := Rect2(Vector2.ZERO, size)
+	if _case_folder.centered:
+		rect.position = -size * 0.5
+	if not rect.has_point(local):
+		return false
+
+	if _case_folder_image != null and _case_folder_image_size != Vector2i.ZERO:
+		var tex_pos: Vector2 = local
+		if _case_folder.centered:
+			tex_pos += size * 0.5
+		var ix: int = int(floor(tex_pos.x))
+		var iy: int = int(floor(tex_pos.y))
+		if ix >= 0 and iy >= 0 and ix < _case_folder_image_size.x and iy < _case_folder_image_size.y:
+			var a: float = _case_folder_image.get_pixel(ix, iy).a
+			return a > 0.1
+
+	return true
+
+func _clear_folder_highlight() -> void:
+	if _case_folder != null:
+		_case_folder.modulate = _case_folder_base_modulate
+
+func _ensure_case_folder_outline() -> void:
+	if _case_folder == null:
+		return
+	if _case_folder_outline != null:
+		return
+	if _case_folder.texture == null:
+		return
+
+	var outline: Sprite2D = preload("res://ui/AlphaOutline.gd").new() as Sprite2D
+	_case_folder_outline = outline
+	if outline == null:
+		return
+	outline.name = "FolderHoverOutline"
+	outline.texture = _case_folder.texture
+	outline.centered = _case_folder.centered
+	outline.z_index = _case_folder.z_index + 1
+	outline.visible = false
+	_case_folder.add_child(outline)
+
+func _build_case_folder_payload() -> Dictionary:
+	if current_suspect == null:
+		return {
+			"title": "CASE FOLDER",
+			"left_text": "No suspect loaded.",
+			"right_text": ""
+		}
+
+	var cs: Dictionary = current_suspect.charge_sheet
+	var left_lines: Array[String] = []
+	left_lines.append("CASE: %s" % String(cs.get("case_id", "")))
+	left_lines.append("TITLE: %s" % String(cs.get("title", "")))
+	left_lines.append("CHARGES:")
+	var charges: Array = cs.get("charges", [])
+	for c in charges:
+		left_lines.append("- %s" % String(c))
+	left_lines.append("")
+	left_lines.append("BRIEF:")
+	left_lines.append(String(cs.get("brief", "")))
+
+	var right_lines: Array[String] = []
+	right_lines.append("DOSSIER")
+	right_lines.append("")
+	var tab_order: Array[String] = ["ALIBI", "TIMELINE", "MOTIVE", "CAPABILITY", "PROFILE"]
+	for tab in tab_order:
+		right_lines.append("%s:" % tab)
+		var tab_data: Dictionary = current_suspect.tabs.get(tab, {})
+		var facts: Array = tab_data.get("facts", [])
+		if facts.is_empty():
+			right_lines.append("- (none)")
+		else:
+			for f in facts:
+				if typeof(f) != TYPE_DICTIONARY:
+					continue
+				var d: Dictionary = f
+				var rel: String = String(d.get("reliability", "UNK"))
+				var text: String = String(d.get("text", ""))
+				right_lines.append("- [%s] %s" % [rel, text])
+		right_lines.append("")
+
+	return {
+		"title": "CASE FOLDER",
+		"left_text": "\n".join(left_lines),
+		"right_text": "\n".join(right_lines)
+	}
+
 func _set_dev_hud_visible(visible: bool) -> void:
 	if visible and not is_instance_valid(_hud_layer):
 		_install_hud()
@@ -508,6 +771,109 @@ func _set_dev_hud_visible(visible: bool) -> void:
 	for label in root.find_children(String(DEV_HUD_LABEL_NAME), "Label", true, false):
 		if label != _hud_label and label is Label:
 			(label as Label).visible = visible
+
+func _init_verdict_flow_ui() -> void:
+	if _verdict_overlay != null:
+		return
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	var hud_root: Node = root.find_child("HudRoot", true, false)
+	if hud_root == null:
+		return
+	var verdict: Node = root.find_child("VerdictBar", true, false)
+	if verdict == null:
+		return
+
+	_verdict_buttons.clear()
+	for child in verdict.get_children():
+		if child is Button:
+			var btn := child as Button
+			var verdict_id: String = btn.name.strip_edges().to_upper()
+			if verdict_id == "CLRPH":
+				verdict_id = "CLEAR"
+			elif verdict_id == "CNVTPH":
+				verdict_id = "CONVICT"
+			elif verdict_id == "SGPH":
+				verdict_id = "SCAPEGOAT"
+			elif verdict_id == "":
+				verdict_id = btn.text.strip_edges().to_upper()
+			btn.pressed.connect(_on_verdict_pressed.bind(verdict_id))
+			if verdict_id == "SCAPEGOAT" and not dev_enable_scapegoat:
+				btn.disabled = true
+			_verdict_buttons.append(btn)
+
+	_verdict_overlay = preload("res://ui/VerdictResultOverlay.gd").new()
+	if _verdict_overlay != null and _verdict_overlay is Control:
+		var overlay_ctrl := _verdict_overlay as Control
+		overlay_ctrl.visible = false
+		overlay_ctrl.z_index = 3000
+		hud_root.add_child(overlay_ctrl)
+		if _verdict_overlay.has_signal("continued"):
+			_verdict_overlay.connect("continued", Callable(self, "_on_verdict_overlay_continued"))
+
+func _on_verdict_pressed(verdict_id: String) -> void:
+	if _verdict_committed:
+		return
+	_verdict_committed = true
+	_verdict_choice = verdict_id
+	_pending_verdict_id = verdict_id
+
+	for btn in _verdict_buttons:
+		if btn != null:
+			btn.disabled = true
+
+	var truth_guilty: bool = current_suspect != null and current_suspect.truth_guilty
+	var is_correct: bool = false
+	if verdict_id == "CLEAR":
+		is_correct = not truth_guilty
+	elif verdict_id == "CONVICT":
+		is_correct = truth_guilty
+	else:
+		is_correct = false
+
+	_last_verdict = verdict_id
+	_last_truth_guilty = truth_guilty
+	_last_verdict_correct = is_correct
+	_pending_run_fail = (verdict_id != "SCAPEGOAT" and not is_correct)
+	_punishment_pending = (verdict_id == "SCAPEGOAT") or (not is_correct)
+	if verdict_id == "SCAPEGOAT":
+		_scapegoat_count += 1
+
+	open_overlay("VERDICT_RESULT")
+	if _verdict_overlay != null and _verdict_overlay.has_method("show_result"):
+		_verdict_overlay.call("show_result", verdict_id, truth_guilty, is_correct, verdict_id == "SCAPEGOAT")
+
+	_log("VERDICT pressed: %s" % verdict_id)
+	set_run_state(RunState.VERDICT_PENDING)
+
+func _on_verdict_overlay_continued() -> void:
+	close_overlay()
+	if _punishment_pending:
+		_log("PUNISHMENT: PENDING (revolver later)")
+	if _pending_run_fail:
+		_log("OUTCOME: FAIL (wrong verdict) verdict=%s truth=%s" % [_last_verdict, "GUILTY" if _last_truth_guilty else "INNOCENT"])
+		set_run_state(RunState.OUTCOME)
+	_pending_run_fail = false
+	_advance_to_next_suspect()
+	set_run_state(RunState.IDLE)
+
+func _advance_to_next_suspect() -> void:
+	suspect_index += 1
+	_refresh_suspect_seed()
+	_update_hud()
+
+func _reset_verdict_flow() -> void:
+	_verdict_committed = false
+	_verdict_choice = ""
+	_pending_run_fail = false
+	_punishment_pending = false
+	for btn in _verdict_buttons:
+		if btn != null:
+			if btn.text.strip_edges().to_upper() == "SCAPEGOAT" and not dev_enable_scapegoat:
+				btn.disabled = true
+			else:
+				btn.disabled = false
 
 func _update_hud() -> void:
 	if not dev_hud_enabled:
@@ -564,9 +930,6 @@ func _update_hud() -> void:
 		_hud_event_log_label.position = Vector2(log_x, log_y)
 		_hud_event_log_label.size = Vector2(log_width, log_height)
 
-	if dev_log_state_changes and run_state != _last_logged_run_state:
-		_last_logged_run_state = run_state
-		_log("RUN -> %s" % _run_state_name(run_state))
 
 	if dev_log_overlays and (overlay_open != _last_logged_overlay_open or overlay_id != _last_logged_overlay_id):
 		_last_logged_overlay_open = overlay_open
@@ -973,7 +1336,138 @@ func _from_base36(s: String) -> int:
 		value = value * 36 + idx
 	return value
 
+func _on_tabs_bar_tab_changed(tab_id: String) -> void:
+	if current_suspect == null:
+		_log("EVIDENCE: no current_suspect")
+		return
+	if _evidence_panel == null:
+		_cache_evidence_ui()
+		if _evidence_panel == null:
+			return
+	if overlay_open and overlay_id == OVERLAY_EVIDENCE_ID:
+		_refresh_evidence_overlay(tab_id)
+	else:
+		_open_evidence_overlay(tab_id)
+
+
+func _open_evidence_overlay(tab_id: String) -> void:
+	_evidence_active_tab = tab_id
+
+	var entries := _build_evidence_entries_for_tab(current_suspect, tab_id)
+
+	# Feed the panel (EvidenceLogPanel has set_entries(entries, active_tab))
+	if _evidence_panel.has_method("set_entries"):
+		_evidence_panel.call("set_entries", entries, tab_id)
+
+	# Show popup + dimmer
+	if is_instance_valid(_evidence_dimmer):
+		_evidence_dimmer.visible = true
+	_evidence_panel.visible = true
+
+	# Treat as overlay for ESC + camera lock consistency
+	overlay_open = true
+	overlay_id = OVERLAY_EVIDENCE_ID
+	set_run_state(RunState.OVERLAY)
+	_set_world_tabs_pickable(false)
+	_set_hud_tabs_enabled(false)
+	if dev_log_overlays:
+		var fp := SuspectIO.fingerprint_suspect(current_suspect)
+		_log("EVIDENCE open tab=%s lines=%d fp=%s" % [tab_id, entries.size(), fp.substr(0, 12)])
+	_apply_overlay_lock(true)
+	_apply_state_policy("evidence")
+
+func _refresh_evidence_overlay(tab_id: String) -> void:
+	_evidence_active_tab = tab_id
+	var entries := _build_evidence_entries_for_tab(current_suspect, tab_id)
+	if _evidence_panel != null and _evidence_panel.has_method("set_entries"):
+		_evidence_panel.call("set_entries", entries, tab_id)
+	if dev_log_overlays:
+		var fp := SuspectIO.fingerprint_suspect(current_suspect)
+		_log("EVIDENCE switch tab=%s lines=%d fp=%s" % [tab_id, entries.size(), fp.substr(0, 12)])
+
+
+func _hide_evidence_overlay() -> void:
+	if is_instance_valid(_evidence_dimmer):
+		_evidence_dimmer.visible = false
+	if is_instance_valid(_evidence_panel):
+		_evidence_panel.visible = false
+		if _evidence_panel.has_method("clear"):
+			_evidence_panel.call("clear")
+	_evidence_active_tab = ""
+	_set_world_tabs_pickable(true)
+	_set_hud_tabs_enabled(true)
+
+
+func _build_evidence_entries_for_tab(s: SuspectData, tab_id: String) -> Array:
+	var out: Array = []
+	var tab_data: Variant = s.tabs.get(tab_id, null)
+	var facts: Array = []
+	if typeof(tab_data) == TYPE_DICTIONARY:
+		facts = (tab_data as Dictionary).get("facts", []) as Array
+
+	# Header line (plain text)
+	out.append({
+		"tab": "",
+		"reliability": "",
+		"text": "%s  (%d)   [ESC to close]" % [tab_id, facts.size()]
+	})
+
+	for f in facts:
+		if typeof(f) != TYPE_DICTIONARY:
+			continue
+		var d := f as Dictionary
+		out.append({
+			"tab": tab_id,
+			"reliability": String(d.get("reliability", "")),
+			"text": String(d.get("text", ""))
+		})
+
+	return out
+
+func _set_world_tabs_pickable(enabled: bool) -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	var tabs: Array[Node] = root.find_children("Tab_*", "Area2D", true, false)
+	for t in tabs:
+		var area := t as Area2D
+		if area != null:
+			area.input_pickable = enabled
+	_set_world_tab_bar_enabled(enabled)
+
+func _set_world_tab_bar_enabled(enabled: bool) -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	var bar: Node = root.find_child("WorldTabBar", true, false)
+	if bar != null and bar.has_method("set_enabled"):
+		bar.call("set_enabled", enabled)
+
+func _set_hud_tabs_enabled(enabled: bool) -> void:
+	if _tabs_bar == null:
+		var root: Node = get_tree().current_scene
+		if root != null:
+			_tabs_bar = root.find_child("TabsBar", true, false)
+	if _tabs_bar is Control:
+		var c := _tabs_bar as Control
+		c.mouse_filter = Control.MOUSE_FILTER_STOP if enabled else Control.MOUSE_FILTER_IGNORE
+	var buttons: Array[Node] = []
+	if _tabs_bar != null:
+		buttons.append_array(_tabs_bar.find_children("", "Button", true, false))
+	var root_tabs: Node = get_tree().current_scene
+	if root_tabs != null:
+		var verdict: Node = root_tabs.find_child("VerdictBar", true, false)
+		if verdict != null:
+			buttons.append_array(verdict.find_children("", "Button", true, false))
+	for b in buttons:
+		var btn := b as Button
+		if btn != null:
+			btn.disabled = not enabled
+
 func _refresh_suspect_seed() -> void:
 	suspect_seed_value = SeedUtil.derive_seed(run_seed_u64, "suspect", suspect_index)
 	suspect_seed_text = "K11S-%s" % SeedUtil.hex16(suspect_seed_value)
 	current_suspect = SuspectFactory.generate(run_seed_u64, run_seed_text, suspect_index)
+	if current_suspect != null:
+		_log("SUSPECT idx=%d seed=%s id=%s truth=%s" % [suspect_index, suspect_seed_text, current_suspect.id, current_suspect.truth_label()])
+	_reset_verdict_flow()
