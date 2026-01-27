@@ -1,8 +1,6 @@
 extends RefCounted
 class_name SuspectFactory
 
-const SeedUtil := preload("res://Scripts/systems/SeedUtil.gd")
-const SuspectData := preload("res://Scripts/systems/SuspectData.gd")
 
 const TAB_KEYS: Array[String] = ["ALIBI", "TIMELINE", "MOTIVE", "CAPABILITY", "PROFILE"]
 
