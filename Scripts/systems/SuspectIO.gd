@@ -1,8 +1,6 @@
 extends RefCounted
 class_name SuspectIO
 
-const SeedUtil := preload("res://Scripts/systems/SeedUtil.gd")
-const SuspectData := preload("res://Scripts/systems/SuspectData.gd")
 
 static func to_dict(s: SuspectData) -> Dictionary:
 	var d: Dictionary = {}
@@ -157,9 +155,9 @@ static func _tabs_hex_to_u64(tabs: Dictionary) -> void:
 static func _read_u64(d: Dictionary, hex_key: String, int_key: String) -> int:
 	var hx: Variant = d.get(hex_key, null)
 	if typeof(hx) == TYPE_STRING:
-		var pv: int = _parse_hex_u64(String(hx))
+		var pv: int = SeedUtil.hex_to_seed_u63(String(hx))
 		if pv >= 0:
-			return SeedUtil.normalize_seed(pv)
+			return pv
 
 	var iv: Variant = d.get(int_key, 0)
 	if typeof(iv) == TYPE_INT:
@@ -167,23 +165,6 @@ static func _read_u64(d: Dictionary, hex_key: String, int_key: String) -> int:
 	if typeof(iv) == TYPE_FLOAT:
 		return SeedUtil.normalize_seed(int(iv))
 	return 0
-
-static func _parse_hex_u64(hex: String) -> int:
-	var t: String = hex.strip_edges().to_lower()
-	if t.begins_with("0x"):
-		t = t.substr(2)
-	if t.length() == 0 or t.length() > 16:
-		return -1
-
-	var chars: String = "0123456789abcdef"
-	var v: int = 0
-	for i in range(t.length()):
-		var ch: String = t[i]
-		var idx: int = chars.find(ch)
-		if idx < 0:
-			return -1
-		v = (v << 4) | idx
-	return v
 
 static func _ensure_parent_dir(path: String) -> void:
 	var dir: String = path.get_base_dir()

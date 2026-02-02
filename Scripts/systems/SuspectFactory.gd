@@ -1,8 +1,6 @@
 extends RefCounted
 class_name SuspectFactory
 
-const SeedUtil := preload("res://Scripts/systems/SeedUtil.gd")
-const SuspectData := preload("res://Scripts/systems/SuspectData.gd")
 
 const TAB_KEYS: Array[String] = ["ALIBI", "TIMELINE", "MOTIVE", "CAPABILITY", "PROFILE"]
 
@@ -33,28 +31,28 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 	return s
 
 static func _build_silhouette(s: SuspectData) -> void:
-	var seed: int = SeedUtil.derive_seed(s.suspect_seed_u64, "silhouette", 0)
-	s.debug["subseeds"]["silhouette"] = SeedUtil.hex16(seed)
-	var rng := SeedUtil.make_rng(seed)
+	var seed_value: int = SeedUtil.derive_seed(s.suspect_seed_u64, "silhouette", 0)
+	s.debug["subseeds"]["silhouette"] = SeedUtil.hex16(seed_value)
+	var rng := SeedUtil.make_rng(seed_value)
 	var idx: int = int(rng.randi_range(1, 10))
 	s.silhouette_label = "SIL_%02d" % idx
 
 static func _build_deadline(s: SuspectData) -> void:
-	var seed: int = SeedUtil.derive_seed(s.suspect_seed_u64, "deadline", 0)
-	s.debug["subseeds"]["deadline"] = SeedUtil.hex16(seed)
-	var rng := SeedUtil.make_rng(seed)
+	var seed_value: int = SeedUtil.derive_seed(s.suspect_seed_u64, "deadline", 0)
+	s.debug["subseeds"]["deadline"] = SeedUtil.hex16(seed_value)
+	var rng := SeedUtil.make_rng(seed_value)
 	s.deadline_s = int(rng.randi_range(60, 90))
 
 static func _build_truth(s: SuspectData) -> void:
-	var seed: int = SeedUtil.derive_seed(s.suspect_seed_u64, "truth", 0)
-	s.debug["subseeds"]["truth"] = SeedUtil.hex16(seed)
-	var rng := SeedUtil.make_rng(seed)
+	var seed_value: int = SeedUtil.derive_seed(s.suspect_seed_u64, "truth", 0)
+	s.debug["subseeds"]["truth"] = SeedUtil.hex16(seed_value)
+	var rng := SeedUtil.make_rng(seed_value)
 	s.truth_guilty = bool(rng.randi_range(0, 1) == 1)
 
 static func _build_charge_sheet(s: SuspectData) -> void:
-	var seed: int = SeedUtil.derive_seed(s.suspect_seed_u64, "charge_sheet", 0)
-	s.debug["subseeds"]["charge_sheet"] = SeedUtil.hex16(seed)
-	var rng := SeedUtil.make_rng(seed)
+	var seed_value: int = SeedUtil.derive_seed(s.suspect_seed_u64, "charge_sheet", 0)
+	s.debug["subseeds"]["charge_sheet"] = SeedUtil.hex16(seed_value)
+	var rng := SeedUtil.make_rng(seed_value)
 
 	var case_id: String = "CASE-%04d" % int(rng.randi_range(1, 9999))
 

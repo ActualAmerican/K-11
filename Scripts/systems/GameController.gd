@@ -7,10 +7,6 @@ var run_state: int = RunState.IDLE
 var run_seed_value: int = 0
 var run_seed_text: String = ""
 var forced_seed_text: String = ""
-const SeedUtil := preload("res://Scripts/systems/SeedUtil.gd")
-const SuspectIO := preload("res://Scripts/systems/SuspectIO.gd")
-const SuspectFactory := preload("res://Scripts/systems/SuspectFactory.gd")
-const SuspectData := preload("res://Scripts/systems/SuspectData.gd")
 var run_seed_u64: int = 0
 var suspect_index: int = 0
 var suspect_seed_value: int = 0
@@ -58,8 +54,6 @@ var _hud_layer: CanvasLayer
 var _hud_label: Label
 var _hud_hotkeys_label: Label
 var _hud_event_log_label: Label
-var _last_logged_app_state: int = -1
-var _last_logged_run_state: int = -1
 var _last_logged_overlay_open: bool = false
 var _last_logged_overlay_id: String = ""
 
@@ -279,6 +273,46 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_I:
 				_dev_import_suspect_clipboard_or_prompt()
 				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_R:
+				var rev_r := get_tree().current_scene.find_child("Revolver", true, false)
+				if rev_r != null and rev_r.has_method("dev_add_live_round"):
+					var ok: bool = bool(rev_r.call("dev_add_live_round"))
+					if ok:
+						_log("Revolver: added live round")
+					else:
+						_log("Revolver: add round failed (full)")
+				else:
+					_log("Revolver: dev_add_live_round not available")
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_K:
+				var rev := get_tree().current_scene.find_child("Revolver", true, false)
+				if rev != null and rev.has_method("begin_verdict_cinematic"):
+					rev.call("begin_verdict_cinematic", false) # click
+					_log("Revolver test: CLICK")
+				return true
+
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_L:
+				var rev2 := get_tree().current_scene.find_child("Revolver", true, false)
+				if rev2 != null and rev2.has_method("begin_verdict_cinematic"):
+					rev2.call("begin_verdict_cinematic", true) # boom
+					_log("Revolver test: BOOM")
+				return true
+			# Revolver debug: Ctrl+Shift+0..6 sets live rounds, Ctrl+Shift+N cycles chamber
+			var rev := get_tree().current_scene.find_child("Revolver", true, false)
+			if rev != null:
+				var round_map := {
+					KEY_0: 0, KEY_1: 1, KEY_2: 2, KEY_3: 3, KEY_4: 4, KEY_5: 5, KEY_6: 6,
+					KEY_KP_0: 0, KEY_KP_1: 1, KEY_KP_2: 2, KEY_KP_3: 3, KEY_KP_4: 4, KEY_KP_5: 5, KEY_KP_6: 6,
+				}
+				var keycode := k.keycode
+				if round_map.has(keycode) and rev.has_method("dev_set_live_rounds"):
+					rev.call("dev_set_live_rounds", round_map[keycode])
+					_log("Revolver dev_set_live_rounds=%d" % round_map[keycode])
+					return true
+				if keycode == KEY_N and rev.has_method("dev_cycle_chamber"):
+					rev.call("dev_cycle_chamber", 1)
+					_log("Revolver dev_cycle_chamber")
+					return true
 
 	return false
 
@@ -567,6 +601,23 @@ func _cache_evidence_ui() -> void:
 		var cb := Callable(self, "_on_tabs_bar_tab_changed")
 		if not _tabs_bar.is_connected("tab_changed", cb):
 			_tabs_bar.connect("tab_changed", cb)
+	# Fallback: bind buttons directly in case the TabsBar script isn't firing
+	if _tabs_bar != null:
+		for child in _tabs_bar.get_children():
+			if child is Button:
+				var btn := child as Button
+				if btn.has_meta("__tab_bound"):
+					continue
+				btn.set_meta("__tab_bound", true)
+				var btn_name: String = String(btn.name)
+				var tab_id: String = btn_name if btn_name != "" else btn.text
+				btn.pressed.connect(_on_tab_button_pressed.bind(tab_id))
+
+	var world_bar: Node = root.find_child("WorldTabBar", true, false)
+	if world_bar != null and world_bar.has_signal("tab_changed"):
+		var cb2 := Callable(self, "_on_tabs_bar_tab_changed")
+		if not world_bar.is_connected("tab_changed", cb2):
+			world_bar.connect("tab_changed", cb2)
 
 	_evidence_panel = root.find_child("EvidenceLogPanel", true, false) as Control
 	if _evidence_panel == null:
@@ -690,7 +741,7 @@ func _ensure_case_folder_outline() -> void:
 	if _case_folder.texture == null:
 		return
 
-	var outline: Sprite2D = preload("res://ui/AlphaOutline.gd").new() as Sprite2D
+	var outline: Sprite2D = preload("res://Scripts/ui/AlphaOutline.gd").new() as Sprite2D
 	_case_folder_outline = outline
 	if outline == null:
 		return
@@ -803,7 +854,7 @@ func _init_verdict_flow_ui() -> void:
 				btn.disabled = true
 			_verdict_buttons.append(btn)
 
-	_verdict_overlay = preload("res://ui/VerdictResultOverlay.gd").new()
+	_verdict_overlay = preload("res://Scripts/ui/VerdictResultOverlay.gd").new()
 	if _verdict_overlay != null and _verdict_overlay is Control:
 		var overlay_ctrl := _verdict_overlay as Control
 		overlay_ctrl.visible = false
@@ -897,7 +948,7 @@ func _update_hud() -> void:
 		if _camera_node.has_method("is_edge_pan_enabled"):
 			edge_pan_text = "ON" if _camera_node.call("is_edge_pan_enabled") else "OFF"
 	var camera_line: String = "CAMERA: %s edge_pan=%s" % [camera_text, edge_pan_text]
-	var hotkeys_text: String = "HOTKEYS:\nF12 EndGame\nCtrl+Shift+I ImportSuspect\nCtrl+Shift+E ExportSuspect\nF7 CopySeed\nF6 LoadSeed\nF4 EdgePan\nF3 Verdict?\nF2 Next?\nF1 HUD"
+	var hotkeys_text: String = "HOTKEYS:\nF12 EndGame\nCtrl+Shift+I ImportSuspect\nCtrl+Shift+E ExportSuspect\nCtrl+Shift+R AddRound\nCtrl+Shift+K Revolver ClickTest\nCtrl+Shift+L Revolver BoomTest\nF7 CopySeed\nF6 LoadSeed\nF4 EdgePan\nF3 Verdict?\nF2 Next?\nF1 HUD"
 	var seed64_text: String = SeedUtil.hex16(run_seed_u64)
 	_hud_label.text = "\n".join([
 		_format_hud_line("STATE", _state_name(app_state)),
@@ -1230,7 +1281,8 @@ func _exit_fullscreen_to_windowed() -> void:
 	DisplayServer.window_set_size(target_size)
 
 	var screen_size: Vector2i = DisplayServer.screen_get_size()
-	var pos: Vector2i = (screen_size - target_size) / 2
+	var pos_f: Vector2 = (screen_size - target_size) / 2.0
+	var pos: Vector2i = Vector2i(pos_f.round())
 	DisplayServer.window_set_position(pos)
 
 func _apply_overlay_lock(is_open: bool) -> void:
@@ -1349,6 +1401,9 @@ func _on_tabs_bar_tab_changed(tab_id: String) -> void:
 	else:
 		_open_evidence_overlay(tab_id)
 
+func _on_tab_button_pressed(tab_id: String) -> void:
+	_on_tabs_bar_tab_changed(tab_id)
+
 
 func _open_evidence_overlay(tab_id: String) -> void:
 	_evidence_active_tab = tab_id
@@ -1356,8 +1411,20 @@ func _open_evidence_overlay(tab_id: String) -> void:
 	var entries := _build_evidence_entries_for_tab(current_suspect, tab_id)
 
 	# Feed the panel (EvidenceLogPanel has set_entries(entries, active_tab))
-	if _evidence_panel.has_method("set_entries"):
+	var used_panel: bool = false
+	if _evidence_panel != null and _evidence_panel.has_method("set_entries"):
 		_evidence_panel.call("set_entries", entries, tab_id)
+		used_panel = true
+	if not used_panel and _evidence_panel != null:
+		var rt := _evidence_panel.find_child("EvidenceRichText", true, false)
+		if rt is RichTextLabel:
+			var lines: Array[String] = []
+			for e in entries:
+				if _evidence_panel.has_method("_format_entry"):
+					lines.append(String(_evidence_panel.call("_format_entry", e)))
+				else:
+					lines.append(String(e.get("text", "")))
+			(rt as RichTextLabel).text = "\n".join(lines)
 
 	# Show popup + dimmer
 	if is_instance_valid(_evidence_dimmer):
@@ -1379,8 +1446,20 @@ func _open_evidence_overlay(tab_id: String) -> void:
 func _refresh_evidence_overlay(tab_id: String) -> void:
 	_evidence_active_tab = tab_id
 	var entries := _build_evidence_entries_for_tab(current_suspect, tab_id)
+	var used_panel: bool = false
 	if _evidence_panel != null and _evidence_panel.has_method("set_entries"):
 		_evidence_panel.call("set_entries", entries, tab_id)
+		used_panel = true
+	if not used_panel and _evidence_panel != null:
+		var rt := _evidence_panel.find_child("EvidenceRichText", true, false)
+		if rt is RichTextLabel:
+			var lines: Array[String] = []
+			for e in entries:
+				if _evidence_panel.has_method("_format_entry"):
+					lines.append(String(_evidence_panel.call("_format_entry", e)))
+				else:
+					lines.append(String(e.get("text", "")))
+			(rt as RichTextLabel).text = "\n".join(lines)
 	if dev_log_overlays:
 		var fp := SuspectIO.fingerprint_suspect(current_suspect)
 		_log("EVIDENCE switch tab=%s lines=%d fp=%s" % [tab_id, entries.size(), fp.substr(0, 12)])

@@ -43,13 +43,14 @@ func _ready() -> void:
 func _on_button_pressed(b: Button) -> void:
 	_select(b, true)
 
-func _select(b: Button, emit_signal: bool) -> void:
+func _select(b: Button, should_emit_signal: bool) -> void:
 	for other in _buttons:
 		other.button_pressed = (other == b)
 
-	current_tab = b.name if b.name != "" else b.text
+	var tab_name: String = String(b.name)
+	current_tab = tab_name if tab_name != "" else b.text
 
-	if emit_signal:
+	if should_emit_signal:
 		print("[K11] TAB -> %s" % current_tab)
 		tab_changed.emit(current_tab)
 

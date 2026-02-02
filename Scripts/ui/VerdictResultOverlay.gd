@@ -59,6 +59,10 @@ func _ready() -> void:
 
 func show_result(verdict_label: String, truth_guilty: bool, is_correct: bool, is_scapegoat: bool = false) -> void:
 	visible = true
+	if is_scapegoat or (not is_correct):
+		var rev := get_tree().current_scene.find_child("Revolver", true, false)
+		if rev != null and rev.has_method("begin_verdict_cinematic"):
+			rev.call("begin_verdict_cinematic", self)
 	_btn_continue.grab_focus()
 
 	var truth_txt := "GUILTY" if truth_guilty else "INNOCENT"

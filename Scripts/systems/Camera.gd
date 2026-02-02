@@ -23,6 +23,9 @@ func _ready() -> void:
 	zoom = Vector2(zoom_scale, zoom_scale)
 	_default_position = global_position
 
+func snap_to_default() -> void:
+	global_position = _default_position
+
 func _process(delta: float) -> void:
 	if Input.is_action_just_pressed("toggle_edge_pan"):
 		mouse_pan_enabled = not mouse_pan_enabled

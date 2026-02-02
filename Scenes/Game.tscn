@@ -1,4 +1,4 @@
-[gd_scene load_steps=25 format=3 uid="uid://skkut8fchrar"]
+[gd_scene load_steps=26 format=3 uid="uid://skkut8fchrar"]
 
 [ext_resource type="Texture2D" uid="uid://dvx87r175v28j" path="res://Assets/Image Assets/Wall.PNG" id="1_iukft"]
 [ext_resource type="Texture2D" uid="uid://bip8s6yw33qga" path="res://Assets/Image Assets/Desk.PNG" id="2_gl6un"]
@@ -22,8 +22,9 @@
 [ext_resource type="Script" uid="uid://43jbfsjc12lj" path="res://Scripts/systems/Camera.gd" id="20_i1pr2"]
 [ext_resource type="Texture2D" uid="uid://dxiuk1bsyglk3" path="res://Assets/Image Assets/IMG_0930.PNG" id="20_rajel"]
 [ext_resource type="Texture2D" uid="uid://coe60tqemvxlo" path="res://Assets/Image Assets/image0.png" id="21_vvhu1"]
-[ext_resource type="Script" uid="uid://cbg4cbgxq4aoh" path="res://ui/TabBar.gd" id="22_tabbar"]
-[ext_resource type="Script" uid="uid://ydpd2xq4cb52" path="res://ui/EvidenceLogPanel.gd" id="23_evidence_log"]
+[ext_resource type="Script" uid="uid://cbg4cbgxq4aoh" path="res://Scripts/ui/TabBar.gd" id="22_tabbar"]
+[ext_resource type="Script" uid="uid://ydpd2xq4cb52" path="res://Scripts/ui/EvidenceLogPanel.gd" id="23_evidence_log"]
+[ext_resource type="PackedScene" path="res://Scenes/RevolverWidget.tscn" id="24_revolver_widget"]
 
 [node name="Game" type="Node2D"]
 metadata/_edit_lock_ = true
@@ -87,11 +88,14 @@ texture = ExtResource("18_i4lct")
 [node name="Combo" type="Sprite2D" parent="."]
 texture = ExtResource("19_iyesh")
 
-[node name="Revolver" type="Sprite2D" parent="."]
+[node name="Revolver" parent="." instance=ExtResource("24_revolver_widget")]
 position = Vector2(58, -397)
 scale = Vector2(0.275, 0.275)
-texture = ExtResource("20_rajel")
-centered = false
+art_texture = ExtResource("20_rajel")
+pivot_offset_px = Vector2(0, -75)
+backing_radius_px = 180.0
+chamber_radius_px = 90.0
+chamber_ring_radius_px = 225.0
 
 [node name="Phone" type="Sprite2D" parent="."]
 texture = ExtResource("21_vvhu1")

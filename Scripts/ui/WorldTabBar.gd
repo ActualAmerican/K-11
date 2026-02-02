@@ -1,5 +1,7 @@
 extends Node2D
 
+signal tab_changed(tab_id: String)
+
 @export var active_tab: String = ""
 @export var highlight_color: Color = Color(1, 1, 1, 0.25)
 
@@ -35,7 +37,9 @@ func _on_tab_input_event(_viewport: Node, event: InputEvent, _shape_idx: int, ta
 	if event is InputEventMouseButton:
 		var mouse := event as InputEventMouseButton
 		if mouse.pressed and mouse.button_index == MOUSE_BUTTON_LEFT:
-			_set_active_tab(_tab_name(tab))
+			var tab_id := _tab_name(tab)
+			_set_active_tab(tab_id)
+			tab_changed.emit(tab_id)
 
 
 func _tab_name(tab: Area2D) -> String:
