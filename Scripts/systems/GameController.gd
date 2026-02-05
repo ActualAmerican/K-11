@@ -1,13 +1,19 @@
 extends Node
 
+
 enum AppState { BOOT, TITLE, MENU, GAME }
 enum RunState { IDLE, OVERLAY, SUSPECT_ACTIVE, VERDICT_PENDING, OUTCOME }
+enum ShotType { VERDICT, OVERFLOW, EXIT_KILLSWITCH, DEV_TEST }
+signal run_event(event_name: String, payload: Dictionary)
 var app_state: int = AppState.BOOT
 var run_state: int = RunState.IDLE
 var run_seed_value: int = 0
 var run_seed_text: String = ""
 var forced_seed_text: String = ""
 var run_seed_u64: int = 0
+var _revolver_widget: Node = null
+var _revolver_sys: RevolverSystem = null
+var _revolver_missing_logged: bool = false
 var suspect_index: int = 0
 var suspect_seed_value: int = 0
 var suspect_seed_text: String = ""
@@ -36,6 +42,11 @@ var _last_verdict_correct: bool = false
 var _punishment_pending: bool = false
 var _pending_run_fail: bool = false
 var _scapegoat_count: int = 0
+var _overflow_discharge_pending: bool = false
+var _overflow_discharge_reason: String = ""
+var _shot_cb_boom: Callable = Callable()
+var _shot_cb_click: Callable = Callable()
+var _shot_cb_finished: Callable = Callable()
 
 var overlay_open: bool = false
 var overlay_id: String = ""
@@ -51,7 +62,7 @@ var overlay_id: String = ""
 @export var dev_enable_scapegoat: bool = true
 
 var _hud_layer: CanvasLayer
-var _hud_label: Label
+var _hud_label: RichTextLabel
 var _hud_hotkeys_label: Label
 var _hud_event_log_label: Label
 var _last_logged_overlay_open: bool = false
@@ -102,6 +113,7 @@ func _ready() -> void:
 	_overlay_manager.call("set_controller", self)
 	add_child(_overlay_manager)
 	_init_seed()
+	_init_revolver_system()
 	_install_hud()
 	_init_verdict_flow_ui()
 	_install_seed_prompt()
@@ -266,6 +278,31 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 			if k.keycode == KEY_F8:
 				_log("HOTKEY F8: do not use in-editor (Godot stops play). Use Ctrl+Shift+E for export.")
 				return true
+			# Revolver dev: 0..6 sets live rounds (fresh cylinder).
+			if not k.ctrl_pressed and not k.shift_pressed:
+				var pk := k.physical_keycode
+				var kc := k.keycode
+				if pk == KEY_0 or kc == KEY_0 or kc == KEY_KP_0 or k.unicode == 48 or k.key_label == KEY_0:
+					_dev_set_live_rounds_and_sync(0)
+					return true
+				if pk == KEY_1 or kc == KEY_1 or kc == KEY_KP_1:
+					_dev_set_live_rounds_and_sync(1)
+					return true
+				if pk == KEY_2 or kc == KEY_2 or kc == KEY_KP_2:
+					_dev_set_live_rounds_and_sync(2)
+					return true
+				if pk == KEY_3 or kc == KEY_3 or kc == KEY_KP_3:
+					_dev_set_live_rounds_and_sync(3)
+					return true
+				if pk == KEY_4 or kc == KEY_4 or kc == KEY_KP_4:
+					_dev_set_live_rounds_and_sync(4)
+					return true
+				if pk == KEY_5 or kc == KEY_5 or kc == KEY_KP_5:
+					_dev_set_live_rounds_and_sync(5)
+					return true
+				if pk == KEY_6 or kc == KEY_6 or kc == KEY_KP_6:
+					_dev_set_live_rounds_and_sync(6)
+					return true
 			# Editor-safe dev hotkeys (avoid F8 stop, F9 play bindings)
 			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_E:
 				_dev_export_suspect()
@@ -274,45 +311,104 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 				_dev_import_suspect_clipboard_or_prompt()
 				return true
 			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_R:
-				var rev_r := get_tree().current_scene.find_child("Revolver", true, false)
-				if rev_r != null and rev_r.has_method("dev_add_live_round"):
-					var ok: bool = bool(rev_r.call("dev_add_live_round"))
-					if ok:
-						_log("Revolver: added live round")
-					else:
-						_log("Revolver: add round failed (full)")
+				_cache_revolver_widget()
+				if _revolver_sys == null:
+					_log("REVOLVER DEV: add round failed (system missing)")
+					return true
+				var idx := _revolver_sys.add_live_round_random()
+				_sync_revolver_widget()
+				var snap_r: Dictionary = _revolver_sys.snapshot()
+				if idx >= 0:
+					_log("REVOLVER DEV: add round -> chamber=%d danger_fill=%d danger=%d injected=1 live_mask=%d" % [
+						idx,
+						snap_r.get("danger_fill", -1),
+						snap_r.get("danger", -1),
+						snap_r.get("live_mask", -1)
+					])
 				else:
-					_log("Revolver: dev_add_live_round not available")
+					_log("REVOLVER DEV: add round failed danger_fill=%d danger=%d injected=0 live_mask=%d" % [
+						snap_r.get("danger_fill", -1),
+						snap_r.get("danger", -1),
+						snap_r.get("live_mask", -1)
+					])
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_BRACKETRIGHT:
+				_cache_revolver_widget()
+				if _revolver_sys == null:
+					_log("REVOLVER DEV: tier++ failed (system missing)")
+					return true
+				var snap_up: Dictionary = _revolver_sys.snapshot()
+				var tier_up := clampi(int(snap_up.get("danger", 0)) + 1, 0, 6)
+				_dev_set_danger_tier_and_reload(tier_up)
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_BRACKETLEFT:
+				_cache_revolver_widget()
+				if _revolver_sys == null:
+					_log("REVOLVER DEV: tier-- failed (system missing)")
+					return true
+				var snap_dn: Dictionary = _revolver_sys.snapshot()
+				var tier_dn := clampi(int(snap_dn.get("danger", 0)) - 1, 0, 6)
+				_dev_set_danger_tier_and_reload(tier_dn)
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_BACKSLASH:
+				_dev_set_danger_tier_and_reload(0)
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_Z:
+				_cache_revolver_widget()
+				if _revolver_sys == null:
+					_log("DANGER DEV: fill=0 failed (system missing)")
+					return true
+				_revolver_sys.set_danger_fill(0)
+				_sync_revolver_widget()
+				var snap0: Dictionary = _revolver_sys.snapshot()
+				_log("DANGER DEV: fill=0 danger_fill=%d danger=%d injected=0 live_mask=%d" % [
+					snap0.get("danger_fill", -1),
+					snap0.get("danger", -1),
+					snap0.get("live_mask", -1)
+				])
+				return true
+
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_X:
+				_cache_revolver_widget()
+				if _revolver_sys == null:
+					_log("DANGER DEV: +25 failed (system missing)")
+					return true
+				_apply_danger_penalty(25, "DEV:+25")
+				return true
+
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_C:
+				_cache_revolver_widget()
+				if _revolver_sys == null:
+					_log("DANGER DEV: +50 failed (system missing)")
+					return true
+				_apply_danger_penalty(50, "DEV:+50")
+				return true
+
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_V:
+				_cache_revolver_widget()
+				if _revolver_sys == null:
+					_log("DANGER DEV: +100 failed (system missing)")
+					return true
+				_apply_danger_penalty(100, "DEV:+100")
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_T:
+				var sim: RevolverSim = RevolverSim.new()
+				var tier: int = int(_revolver_sys.danger) if _revolver_sys != null else 6
+				var report: Dictionary = sim.run(run_seed_u64, 50, tier)
+				_log("REVOLVER_SIM: " + String(report.get("summary", "")))
+				if not bool(report.get("ok", false)):
+					var errs: Array = report.get("errors", [])
+					var max_errs: int = min(10, errs.size())
+					for i in range(max_errs):
+						_log("REVOLVER_SIM_FAIL: " + String(errs[i]))
 				return true
 			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_K:
-				var rev := get_tree().current_scene.find_child("Revolver", true, false)
-				if rev != null and rev.has_method("begin_verdict_cinematic"):
-					rev.call("begin_verdict_cinematic", false) # click
-					_log("Revolver test: CLICK")
+				request_shot(ShotType.DEV_TEST, false, "dev_hotkey")
 				return true
 
 			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_L:
-				var rev2 := get_tree().current_scene.find_child("Revolver", true, false)
-				if rev2 != null and rev2.has_method("begin_verdict_cinematic"):
-					rev2.call("begin_verdict_cinematic", true) # boom
-					_log("Revolver test: BOOM")
+				request_shot(ShotType.DEV_TEST, true, "dev_hotkey")
 				return true
-			# Revolver debug: Ctrl+Shift+0..6 sets live rounds, Ctrl+Shift+N cycles chamber
-			var rev := get_tree().current_scene.find_child("Revolver", true, false)
-			if rev != null:
-				var round_map := {
-					KEY_0: 0, KEY_1: 1, KEY_2: 2, KEY_3: 3, KEY_4: 4, KEY_5: 5, KEY_6: 6,
-					KEY_KP_0: 0, KEY_KP_1: 1, KEY_KP_2: 2, KEY_KP_3: 3, KEY_KP_4: 4, KEY_KP_5: 5, KEY_KP_6: 6,
-				}
-				var keycode := k.keycode
-				if round_map.has(keycode) and rev.has_method("dev_set_live_rounds"):
-					rev.call("dev_set_live_rounds", round_map[keycode])
-					_log("Revolver dev_set_live_rounds=%d" % round_map[keycode])
-					return true
-				if keycode == KEY_N and rev.has_method("dev_cycle_chamber"):
-					rev.call("dev_cycle_chamber", 1)
-					_log("Revolver dev_cycle_chamber")
-					return true
 
 	return false
 
@@ -340,6 +436,9 @@ func close_overlay() -> void:
 	overlay_id = ""
 	_clear_folder_highlight()
 	set_run_state(RunState.IDLE)
+	if _overflow_discharge_pending:
+		_overflow_discharge_pending = false
+		_play_overflow_discharge(_overflow_discharge_reason)
 	if dev_log_overlays:
 		_log("OVERLAY close")
 	_apply_overlay_lock(false)
@@ -464,10 +563,13 @@ func _install_hud() -> void:
 	_hud_layer.layer = 100
 	add_child(_hud_layer)
 
-	_hud_label = Label.new()
+	_hud_label = RichTextLabel.new()
 	_hud_label.name = DEV_HUD_LABEL_NAME
 	_hud_label.position = Vector2(12, 12)
 	_hud_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_label.bbcode_enabled = true
+	_hud_label.fit_content = true
+	_hud_label.scroll_active = false
 	_hud_layer.add_child(_hud_label)
 
 	_hud_hotkeys_label = Label.new()
@@ -590,6 +692,305 @@ func _cache_camera() -> void:
 		_log("CAMERA: n/a (Camera2D not found in current scene)")
 	elif _camera_node != null:
 		_camera_missing_logged = false
+
+func _cache_revolver_widget() -> void:
+	if is_instance_valid(_revolver_widget):
+		return
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	_revolver_widget = root.find_child("Revolver", true, false)
+	if _revolver_widget == null and not _revolver_missing_logged:
+		_revolver_missing_logged = true
+		_log("REVOLVER: n/a (Revolver node not found in current scene)")
+	elif _revolver_widget != null:
+		_revolver_missing_logged = false
+
+func _init_revolver_system() -> void:
+	if _revolver_sys == null:
+		_revolver_sys = preload("res://Scripts/systems/RevolverSystem.gd").new()
+	_revolver_sys.setup(run_seed_u64)
+	_revolver_sys.set_danger(0)
+	_revolver_sys.load_fresh_cylinder()
+	_cache_revolver_widget()
+	_sync_revolver_widget()
+
+func _sync_revolver_widget() -> void:
+	if not is_instance_valid(_revolver_widget) or _revolver_sys == null:
+		return
+	if _revolver_widget.has_method("set_state_from_masks"):
+		_revolver_widget.call(
+			"set_state_from_masks",
+			_revolver_sys.live_mask,
+			_revolver_sys.consumed_mask,
+			_revolver_sys.current_index
+		)
+
+func request_shot(shot_type: ShotType, will_boom: bool, reason: String = "") -> bool:
+	var allowed := false
+	match shot_type:
+		ShotType.VERDICT:
+			allowed = (overlay_open and overlay_id == "VERDICT_RESULT") or run_state == RunState.VERDICT_PENDING or (_verdict_overlay != null and _verdict_overlay.visible)
+		ShotType.OVERFLOW:
+			allowed = not overlay_open
+		ShotType.EXIT_KILLSWITCH:
+			allowed = overlay_open and overlay_id == "EXIT_PROTOCOL"
+		ShotType.DEV_TEST:
+			allowed = not overlay_open
+		_:
+			allowed = false
+	_log("SHOT_REQUEST type=%s state=%s overlay=%s allowed=%s reason=%s" % [
+		_shot_type_name(shot_type),
+		_run_state_name(run_state),
+		overlay_id if overlay_open else "none",
+		str(allowed),
+		reason
+	])
+	if not allowed:
+		return false
+	if shot_type == ShotType.OVERFLOW:
+		return _play_overflow_cinematic(reason)
+	return _play_shot_cinematic(will_boom, shot_type, reason)
+
+func _play_shot_cinematic(_will_boom: bool, shot_type: ShotType, reason: String) -> bool:
+	var rev: Node = _revolver_widget
+	if not is_instance_valid(rev):
+		rev = get_tree().current_scene.find_child("Revolver", true, false)
+	if rev == null or not rev.has_method("begin_verdict_cinematic"):
+		return false
+	if _revolver_sys == null:
+		return false
+	var roll: Dictionary = _revolver_sys.roll_random_chamber(_shot_type_name(shot_type))
+	if not bool(roll.get("ok", false)):
+		_log("SHOT_ROLL failed type=%s reason=%s" % [_shot_type_name(shot_type), reason])
+		return false
+	var idx := int(roll.get("index", -1))
+	var chamber_id := int(roll.get("chamber_id", idx + 1 if idx >= 0 else -1))
+	var was_live := bool(roll.get("was_live", false))
+	var target := _shot_target_from_reason(reason)
+	var live_count := 0
+	var empty_count := 0
+	if _revolver_sys != null:
+		var live_mask := int(_revolver_sys.live_mask)
+		var consumed_mask := int(_revolver_sys.consumed_mask)
+		for i in range(6):
+			if ((consumed_mask >> i) & 1) == 0:
+				if ((live_mask >> i) & 1) == 1:
+					live_count += 1
+				else:
+					empty_count += 1
+	_log("SHOT_ROLL type=%s chamber=%d was_live=%s target=%s reason=%s" % [
+		_shot_type_name(shot_type),
+		chamber_id,
+		str(was_live),
+		target,
+		reason
+	])
+	_log("SHOT_ODDS type=%s live=%d empty=%d" % [
+		_shot_type_name(shot_type),
+		live_count,
+		empty_count
+	])
+	if rev.has_signal("verdict_boom"):
+		if not _shot_cb_boom.is_null() and rev.is_connected("verdict_boom", _shot_cb_boom):
+			rev.disconnect("verdict_boom", _shot_cb_boom)
+		_shot_cb_boom = func() -> void:
+			_revolver_sys.consume_chamber(idx, was_live)
+			var kill := target if was_live else "none"
+			_log("SHOT_RESULT type=%s target=%s result=BOOM chamber=%d kill=%s live_mask=%d consumed_mask=%d" % [
+				_shot_type_name(shot_type),
+				target,
+				chamber_id,
+				kill,
+				int(_revolver_sys.live_mask),
+				int(_revolver_sys.consumed_mask)
+			])
+			var d: Dictionary = _revolver_sys.debug_chambers()
+			_log("REVOLVER_STATE: full=%s empty=%s consumed=%s available=%s" % [
+				_fmt_ids(d.get("full", [])),
+				_fmt_ids(d.get("empty", [])),
+				_fmt_ids(d.get("consumed", [])),
+				_fmt_ids(d.get("available", []))
+			])
+		rev.connect("verdict_boom", _shot_cb_boom, CONNECT_ONE_SHOT)
+	if rev.has_signal("verdict_click"):
+		if not _shot_cb_click.is_null() and rev.is_connected("verdict_click", _shot_cb_click):
+			rev.disconnect("verdict_click", _shot_cb_click)
+		_shot_cb_click = func() -> void:
+			_revolver_sys.consume_chamber(idx, was_live)
+			var kill := target if was_live else "none"
+			_log("SHOT_RESULT type=%s target=%s result=CLICK chamber=%d kill=%s live_mask=%d consumed_mask=%d" % [
+				_shot_type_name(shot_type),
+				target,
+				chamber_id,
+				kill,
+				int(_revolver_sys.live_mask),
+				int(_revolver_sys.consumed_mask)
+			])
+			if shot_type == ShotType.VERDICT and target == "suspect":
+				_emit_run_event("empty_click_outcome", {
+					"source": "revolver",
+					"shot_type": "VERDICT",
+					"target": "suspect",
+					"result": "CLICK",
+					"chamber": chamber_id,
+					"reason": reason,
+					"noise_spike": 80,
+					"oversight_heat": 1,
+					"distortion_pulse": 1,
+					"corruption_delta": 1,
+					"suspect_fled": true
+				})
+				if _verdict_overlay != null and _verdict_overlay.has_method("append_note"):
+					_verdict_overlay.call("append_note", "CLICK. Suspect flees. Noise spikes.")
+			var d: Dictionary = _revolver_sys.debug_chambers()
+			_log("REVOLVER_STATE: full=%s empty=%s consumed=%s available=%s" % [
+				_fmt_ids(d.get("full", [])),
+				_fmt_ids(d.get("empty", [])),
+				_fmt_ids(d.get("consumed", [])),
+				_fmt_ids(d.get("available", []))
+			])
+		rev.connect("verdict_click", _shot_cb_click, CONNECT_ONE_SHOT)
+	if rev.has_signal("verdict_finished"):
+		if not _shot_cb_finished.is_null() and rev.is_connected("verdict_finished", _shot_cb_finished):
+			rev.disconnect("verdict_finished", _shot_cb_finished)
+		_shot_cb_finished = func() -> void:
+			_sync_revolver_widget()
+		rev.connect("verdict_finished", _shot_cb_finished, CONNECT_ONE_SHOT)
+	rev.call("begin_verdict_cinematic", was_live)
+	return true
+
+func _play_overflow_cinematic(reason: String) -> bool:
+	var rev: Node = _revolver_widget
+	if not is_instance_valid(rev):
+		rev = get_tree().current_scene.find_child("Revolver", true, false)
+	if rev == null or not rev.has_method("begin_verdict_cinematic"):
+		return false
+	if _revolver_sys == null:
+		return false
+	if rev.has_signal("verdict_boom"):
+		rev.verdict_boom.connect(func() -> void:
+			var shot := _revolver_sys.fire_random_unconsumed("overflow")
+			var idx := int(shot.get("idx", -1))
+			var idx_display := idx + 1 if idx >= 0 else -1
+			_log("OVERFLOW DISCHARGE: fired=%s idx=%d live_mask=%d consumed_mask=%d reason=%s" % [
+				"true" if idx >= 0 else "false",
+				idx_display,
+				int(_revolver_sys.live_mask),
+				int(_revolver_sys.consumed_mask),
+				reason
+			])
+		, CONNECT_ONE_SHOT)
+	if rev.has_signal("verdict_finished"):
+		rev.verdict_finished.connect(func() -> void:
+			_sync_revolver_widget()
+		, CONNECT_ONE_SHOT)
+	rev.call("begin_verdict_cinematic", true)
+	return true
+
+func _shot_type_name(shot_type: ShotType) -> String:
+	match shot_type:
+		ShotType.VERDICT: return "VERDICT"
+		ShotType.OVERFLOW: return "OVERFLOW"
+		ShotType.EXIT_KILLSWITCH: return "EXIT_KILLSWITCH"
+		ShotType.DEV_TEST: return "DEV_TEST"
+		_: return "UNKNOWN"
+
+func _shot_target_from_reason(reason: String) -> String:
+	if "target=player" in reason:
+		return "player"
+	if "target=suspect" in reason:
+		return "suspect"
+	return "unknown"
+
+func _fmt_ids(ids: Array) -> String:
+	var out: Array[String] = []
+	for v in ids:
+		out.append(str(v))
+	return ", ".join(out)
+
+func _emit_run_event(name: String, payload: Dictionary) -> void:
+	run_event.emit(name, payload)
+	_log("RUN_EVENT %s %s" % [name, payload])
+
+func _apply_danger_penalty(points: int, reason: String) -> int:
+	if _revolver_sys == null:
+		_log("DANGER PENALTY: skipped (system missing) reason=%s" % reason)
+		return 0
+	var before: Dictionary = _revolver_sys.snapshot()
+	var before_fill := int(before.get("danger_fill", 0))
+	var before_tier := int(before.get("danger", 0))
+	var before_live := int(before.get("live_mask", 0))
+	var crosses := int(max(before_fill + points, 0) / 100.0)
+	var injected := _revolver_sys.add_danger_fill(points)
+	_sync_revolver_widget()
+	var after: Dictionary = _revolver_sys.snapshot()
+	_log("DANGER PENALTY: points=%d reason=%s fill=%d->%d tier=%d->%d injected=%d live_mask=%d" % [
+		points,
+		reason,
+		before_fill,
+		int(after.get("danger_fill", -1)),
+		before_tier,
+		int(after.get("danger", -1)),
+		injected,
+		int(after.get("live_mask", -1))
+	])
+	if crosses > 0 and before_live == 63 and injected == 0:
+		_trigger_overflow_discharge(reason)
+	return injected
+
+func penalty_attempt_loss(detail: String = "", points: int = 100) -> int:
+	var suffix := (":" + detail) if detail != "" else ""
+	return _apply_danger_penalty(points, "ATTEMPT_LOSS" + suffix)
+
+func penalty_dirty_action(action_id: String = "", points: int = 100) -> int:
+	var suffix := (":" + action_id) if action_id != "" else ""
+	return _apply_danger_penalty(points, "DIRTY_ACTION" + suffix)
+
+func _trigger_overflow_discharge(reason: String) -> void:
+	if overlay_open:
+		_overflow_discharge_pending = true
+		_overflow_discharge_reason = reason
+		return
+	_play_overflow_discharge(reason)
+
+func _play_overflow_discharge(reason: String) -> void:
+	var rev: Node = _revolver_widget
+	if not is_instance_valid(rev):
+		rev = get_tree().current_scene.find_child("Revolver", true, false)
+	if _revolver_sys == null or rev == null:
+		return
+	request_shot(ShotType.OVERFLOW, true, reason)
+
+func _dev_set_danger_tier_and_reload(tier: int) -> void:
+	_cache_revolver_widget()
+	if _revolver_sys == null:
+		_log("REVOLVER DEV: set danger=%d failed (system missing)" % tier)
+		return
+	_revolver_sys.set_danger(tier)
+	_revolver_sys.load_fresh_cylinder()
+	_sync_revolver_widget()
+	var snap: Dictionary = _revolver_sys.snapshot()
+	_log("REVOLVER DEV: set danger=%d (fresh load live_mask=%d)" % [snap.get("danger", -1), snap.get("live_mask", -1)])
+
+func _dev_set_live_rounds_and_sync(count: int) -> void:
+	_cache_revolver_widget()
+	if _revolver_sys == null:
+		_log("REVOLVER DEV: set live=%d failed (system missing)" % count)
+		return
+
+	var clamped := clampi(count, 0, 6)
+	_revolver_sys.set_danger(clamped)
+	_revolver_sys.set_danger_fill(0)
+	_revolver_sys.load_fresh_cylinder()
+	_sync_revolver_widget()
+	var snap: Dictionary = _revolver_sys.snapshot()
+	_log("REVOLVER DEV: set live=%d danger_fill=%d danger=%d live_mask=%d" % [
+		clamped,
+		snap.get("danger_fill", -1),
+		snap.get("danger", -1),
+		snap.get("live_mask", -1)
+	])
 
 func _cache_evidence_ui() -> void:
 	var root: Node = get_tree().current_scene
@@ -819,9 +1220,9 @@ func _set_dev_hud_visible(visible: bool) -> void:
 		if layer != _hud_layer and layer is CanvasLayer:
 			(layer as CanvasLayer).visible = visible
 
-	for label in root.find_children(String(DEV_HUD_LABEL_NAME), "Label", true, false):
-		if label != _hud_label and label is Label:
-			(label as Label).visible = visible
+	for label in root.find_children(String(DEV_HUD_LABEL_NAME), "RichTextLabel", true, false):
+		if label != _hud_label and label is RichTextLabel:
+			(label as RichTextLabel).visible = visible
 
 func _init_verdict_flow_ui() -> void:
 	if _verdict_overlay != null:
@@ -860,6 +1261,8 @@ func _init_verdict_flow_ui() -> void:
 		overlay_ctrl.visible = false
 		overlay_ctrl.z_index = 3000
 		hud_root.add_child(overlay_ctrl)
+		if _verdict_overlay.has_method("set_controller"):
+			_verdict_overlay.call("set_controller", self)
 		if _verdict_overlay.has_signal("continued"):
 			_verdict_overlay.connect("continued", Callable(self, "_on_verdict_overlay_continued"))
 
@@ -948,7 +1351,37 @@ func _update_hud() -> void:
 		if _camera_node.has_method("is_edge_pan_enabled"):
 			edge_pan_text = "ON" if _camera_node.call("is_edge_pan_enabled") else "OFF"
 	var camera_line: String = "CAMERA: %s edge_pan=%s" % [camera_text, edge_pan_text]
-	var hotkeys_text: String = "HOTKEYS:\nF12 EndGame\nCtrl+Shift+I ImportSuspect\nCtrl+Shift+E ExportSuspect\nCtrl+Shift+R AddRound\nCtrl+Shift+K Revolver ClickTest\nCtrl+Shift+L Revolver BoomTest\nF7 CopySeed\nF6 LoadSeed\nF4 EdgePan\nF3 Verdict?\nF2 Next?\nF1 HUD"
+	var danger_fill: int = 0
+	var full_list: Array[String] = []
+	var empty_list: Array[String] = []
+	var snap: Dictionary = {}
+	if _revolver_sys != null:
+		snap = _revolver_sys.snapshot()
+		danger_fill = int(snap.get("danger_fill", 0))
+		var live_mask := int(snap.get("live_mask", 0))
+		for i in range(6):
+			var chamber_id := str(i + 1)
+			if ((live_mask >> i) & 1) == 1:
+				full_list.append(chamber_id)
+			else:
+				empty_list.append(chamber_id)
+	var danger_band := "GREEN"
+	if danger_fill >= 76:
+		danger_band = "RED"
+	elif danger_fill >= 51:
+		danger_band = "ORANGE"
+	elif danger_fill >= 26:
+		danger_band = "YELLOW"
+	var band_color := "9AD14B"
+	match danger_band:
+		"RED":
+			band_color = "E55454"
+		"ORANGE":
+			band_color = "E28C3B"
+		"YELLOW":
+			band_color = "E5D04E"
+	var band_markup := "[color=#%s]%s[/color]" % [band_color, danger_band]
+	var hotkeys_text: String = "HOTKEYS:\nF12 EndGame\nCtrl+Shift+I ImportSuspect\nCtrl+Shift+E ExportSuspect\nCtrl+Shift+R AddRound\nCtrl+Shift+] Tier+Reload\nCtrl+Shift+[ Tier-Reload\nCtrl+Shift+\\ Tier0+Reload\n0..6 SetLiveRounds\nCtrl+Shift+Z DangerReset\nCtrl+Shift+X Danger+25\nCtrl+Shift+C Danger+50\nCtrl+Shift+V Danger+100\nCtrl+Shift+T RevolverSim (50)\nCtrl+Shift+K Revolver ClickTest\nCtrl+Shift+L Revolver BoomTest\nF7 CopySeed\nF6 LoadSeed\nF4 EdgePan\nF3 Verdict?\nF2 Next?\nF1 HUD"
 	var seed64_text: String = SeedUtil.hex16(run_seed_u64)
 	_hud_label.text = "\n".join([
 		_format_hud_line("STATE", _state_name(app_state)),
@@ -963,8 +1396,18 @@ func _update_hud() -> void:
 		_format_hud_line("SILH", current_suspect.silhouette_label if current_suspect != null else "n/a"),
 		_format_hud_line("DEADLINE", current_suspect.get_deadline_label() if current_suspect != null else "n/a"),
 		_format_hud_line("TRUTH", current_suspect.truth_label() if current_suspect != null else "n/a"),
+		_format_hud_line("DANGER_TIER", "%d/6" % int(snap.get("danger", 0)) if _revolver_sys != null else "0/6"),
+		_format_hud_line("DANGER_FILL", "%d/100" % danger_fill),
+		_format_hud_line("DANGER_POINTS", str(danger_fill)),
+		_format_hud_line("DANGER_BAND", band_markup),
+		_format_hud_line("CHAMBERS_FULL", ", ".join(full_list)),
+		_format_hud_line("CHAMBERS_EMPTY", ", ".join(empty_list)),
 		"",
 	])
+	if _hud_label is RichTextLabel:
+		var rt := _hud_label as RichTextLabel
+		rt.autowrap_mode = TextServer.AUTOWRAP_OFF
+		rt.size = rt.get_minimum_size()
 	if is_instance_valid(_hud_hotkeys_label):
 		_hud_hotkeys_label.text = hotkeys_text
 		var viewport_size: Vector2 = get_viewport().get_visible_rect().size
@@ -994,17 +1437,17 @@ func _cleanup_duplicate_hud_labels() -> void:
 		return
 
 	if not is_instance_valid(_hud_label):
-		for label in _hud_layer.find_children(String(DEV_HUD_LABEL_NAME), "Label", true, false):
-			if label is Label:
-				_hud_label = label as Label
+		for label in _hud_layer.find_children(String(DEV_HUD_LABEL_NAME), "RichTextLabel", true, false):
+			if label is RichTextLabel:
+				_hud_label = label as RichTextLabel
 				break
 	if not is_instance_valid(_hud_label):
 		return
 	_hud_label.visible = dev_hud_enabled
 
-	for label in root.find_children(String(DEV_HUD_LABEL_NAME), "Label", true, false):
-		if label is Label and label != _hud_label:
-			var other: Label = label as Label
+	for label in root.find_children(String(DEV_HUD_LABEL_NAME), "RichTextLabel", true, false):
+		if label is RichTextLabel and label != _hud_label:
+			var other: RichTextLabel = label as RichTextLabel
 			other.visible = false
 
 	for label in root.find_children("DevEventLogLabel", "Label", true, false):
@@ -1301,6 +1744,12 @@ func _reset_run_state() -> void:
 	run_state = RunState.IDLE
 	suspect_index = 0
 	_refresh_suspect_seed()
+	if _revolver_sys != null:
+		_revolver_sys.setup(run_seed_u64)
+		_revolver_sys.set_danger(0)
+		_revolver_sys.set_danger_fill(0)
+		_revolver_sys.load_fresh_cylinder()
+		_sync_revolver_widget()
 	_log("SUSPECT_STREAM reset idx=%d seed=%s" % [suspect_index, suspect_seed_text])
 	_apply_state_policy("seed")
 	_update_hud()

@@ -8,6 +8,10 @@ var _panel: PanelContainer
 var _title: Label
 var _body: RichTextLabel
 var _btn_continue: Button
+var _controller: Node = null
+
+func set_controller(c: Node) -> void:
+	_controller = c
 
 func _ready() -> void:
 	visible = false
@@ -59,10 +63,22 @@ func _ready() -> void:
 
 func show_result(verdict_label: String, truth_guilty: bool, is_correct: bool, is_scapegoat: bool = false) -> void:
 	visible = true
+	_body.clear()
 	if is_scapegoat or (not is_correct):
-		var rev := get_tree().current_scene.find_child("Revolver", true, false)
-		if rev != null and rev.has_method("begin_verdict_cinematic"):
-			rev.call("begin_verdict_cinematic", self)
+		var target := "suspect"
+		var verdict_up := verdict_label.strip_edges().to_upper()
+		if is_scapegoat:
+			target = "suspect"
+		elif verdict_up == "CLEAR":
+			target = "player"
+		elif verdict_up == "CONVICT":
+			target = "suspect"
+		var reason := "verdict:%s:target=%s" % [verdict_up, target]
+		var gc: Node = _controller
+		if gc == null:
+			gc = get_tree().current_scene.find_child("GameController", true, false)
+		if gc != null and gc.has_method("request_shot"):
+			gc.call("request_shot", gc.ShotType.VERDICT, true, reason)
 	_btn_continue.grab_focus()
 
 	var truth_txt := "GUILTY" if truth_guilty else "INNOCENT"
@@ -71,13 +87,16 @@ func show_result(verdict_label: String, truth_guilty: bool, is_correct: bool, is
 		correctness = "EXECUTED (YOU LIVE)"
 	_btn_continue.text = "Restart" if (not is_correct and not is_scapegoat) else "Continue"
 
-	_body.clear()
 	_body.append_text("[b]Verdict:[/b] %s\n" % verdict_label)
 	_body.append_text("[b]Result:[/b] %s\n" % correctness)
 	_body.append_text("[b]Truth:[/b] %s\n" % truth_txt)
 
 func hide_overlay() -> void:
 	visible = false
+
+func append_note(note: String) -> void:
+	if _body != null:
+		_body.append_text("\n" + note)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not visible:

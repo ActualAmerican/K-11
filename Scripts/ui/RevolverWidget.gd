@@ -69,6 +69,7 @@ var _cin_z_index: int = 0
 var _cin_modulate: Color = Color(1, 1, 1, 1)
 var _cin_pivot_rot: float = 0.0
 var _cin_pivot_scale: Vector2 = Vector2.ONE
+var _pending_state: Dictionary = {}
 
 func _ready() -> void:
 	if art_texture != null:
@@ -118,6 +119,11 @@ func _rebuild() -> void:
 		p.polygon = _make_circle_points(chamber_radius_px, 32)
 		_chamber_polys.append(p)
 
+	if not is_instance_valid(_highlight):
+		_highlight = Line2D.new()
+		_highlight.name = "Highlight"
+		_pivot.add_child(_highlight)
+
 	_highlight.z_index = 11
 	_highlight.width = highlight_width_px
 	_highlight.default_color = highlight_color
@@ -158,6 +164,13 @@ func _dev_apply() -> void:
 	_current_index = dev_current_chamber
 
 func set_state_from_masks(live_mask: int, consumed_mask: int, current_index: int) -> void:
+	if _cin_active:
+		_pending_state = {
+			"live_mask": live_mask,
+			"consumed_mask": consumed_mask,
+			"current_index": current_index
+		}
+		return
 	for i in range(CHAMBER_COUNT):
 		_live[i] = ((live_mask >> i) & 1) == 1
 		_consumed[i] = ((consumed_mask >> i) & 1) == 1
@@ -196,13 +209,12 @@ func dev_add_live_round() -> bool:
 func _apply_visuals() -> void:
 	for i in range(min(_chamber_polys.size(), CHAMBER_COUNT)):
 		var c := color_live if _live[i] else color_empty
-		if _consumed[i]:
-			c.a *= consumed_alpha_mult
 		_chamber_polys[i].color = c
 
-	_highlight.visible = show_highlight
-	_highlight.position = _socket_markers[_current_index].position
-	_highlight.default_color = highlight_color
+	if is_instance_valid(_highlight):
+		_highlight.visible = show_highlight
+		_highlight.position = _socket_markers[_current_index].position
+		_highlight.default_color = highlight_color
 
 func begin_verdict_cinematic(a: Variant = null, b: Variant = null) -> void:
 	# Accept:
@@ -238,6 +250,7 @@ func _start_verdict_cinematic(will_boom: bool) -> void:
 	_cin_modulate = modulate
 	_cin_pivot_rot = _pivot.rotation
 	_cin_pivot_scale = _pivot.scale
+	_pending_state = {}
 
 	# Keep above wall art
 	z_index = 4096
@@ -291,6 +304,13 @@ func _start_verdict_cinematic(will_boom: bool) -> void:
 func _finish_verdict_cinematic() -> void:
 	_restore_from_cinematic()
 	verdict_finished.emit()
+	if not _pending_state.is_empty():
+		set_state_from_masks(
+			int(_pending_state.get("live_mask", 0)),
+			int(_pending_state.get("consumed_mask", 0)),
+			int(_pending_state.get("current_index", 0))
+		)
+		_pending_state = {}
 
 func _restore_from_cinematic() -> void:
 	if not _cin_active:
