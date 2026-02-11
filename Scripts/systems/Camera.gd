@@ -59,3 +59,11 @@ func _process(delta: float) -> void:
 	var target: Vector2 = _default_position + Vector2(zone_x, zone_y) * snap_offset_world
 	var smooth_factor: float = 1.0 - exp(-snap_strength * delta)
 	global_position = global_position.lerp(target, smooth_factor)
+
+func emit_interference(meta: Dictionary = {}) -> void:
+	var root := get_tree().current_scene
+	if root == null:
+		return
+	var ctrl := root.find_child("GameController", true, false)
+	if ctrl != null and ctrl.has_method("_apply_noise_trigger"):
+		ctrl.call("_apply_noise_trigger", &"camera_interference", meta)

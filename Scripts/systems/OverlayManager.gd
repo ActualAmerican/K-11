@@ -48,6 +48,127 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		label.text = "DEV_TEST OVERLAY"
 		label.position = Vector2(24, 24)
 		panel.add_child(label)
+	if id == "GAME_OVER":
+		var dimmer := ColorRect.new()
+		dimmer.color = Color(0, 0, 0, 0.75)
+		dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
+		dimmer.anchor_left = 0.0
+		dimmer.anchor_top = 0.0
+		dimmer.anchor_right = 1.0
+		dimmer.anchor_bottom = 1.0
+		dimmer.offset_left = 0.0
+		dimmer.offset_top = 0.0
+		dimmer.offset_right = 0.0
+		dimmer.offset_bottom = 0.0
+		current_root.add_child(dimmer)
+
+		var box := PanelContainer.new()
+		box.anchor_left = 0.5
+		box.anchor_top = 0.5
+		box.anchor_right = 0.5
+		box.anchor_bottom = 0.5
+		box.offset_left = -260
+		box.offset_top = -130
+		box.offset_right = 260
+		box.offset_bottom = 130
+		dimmer.add_child(box)
+		var box_style := StyleBoxFlat.new()
+		box_style.bg_color = Color(0.08, 0.08, 0.08, 0.95)
+		box.add_theme_stylebox_override("panel", box_style)
+
+		var v := VBoxContainer.new()
+		v.offset_left = 18
+		v.offset_top = 18
+		v.offset_right = -18
+		v.offset_bottom = -18
+		box.add_child(v)
+
+		var title := Label.new()
+		title.text = "GAME OVER"
+		title.add_theme_color_override("font_color", Color(1, 1, 1, 1))
+		v.add_child(title)
+
+		var reason := Label.new()
+		reason.text = str(payload.get("reason", "Killed"))
+		reason.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85, 1))
+		v.add_child(reason)
+
+		var btn_row := HBoxContainer.new()
+		v.add_child(btn_row)
+
+		var restart := Button.new()
+		restart.text = "Restart"
+		restart.pressed.connect(func() -> void:
+			if controller != null and controller.has_method("_on_game_over_restart"):
+				controller.call("_on_game_over_restart")
+		)
+		btn_row.add_child(restart)
+
+		var quit := Button.new()
+		quit.text = "Quit"
+		quit.pressed.connect(func() -> void:
+			if controller != null and controller.has_method("_on_game_over_quit"):
+				controller.call("_on_game_over_quit")
+		)
+		btn_row.add_child(quit)
+	if id == "PHONE":
+		var dimmer := ColorRect.new()
+		dimmer.anchor_left = 0.0
+		dimmer.anchor_top = 0.0
+		dimmer.anchor_right = 1.0
+		dimmer.anchor_bottom = 1.0
+		dimmer.offset_left = 0.0
+		dimmer.offset_top = 0.0
+		dimmer.offset_right = 0.0
+		dimmer.offset_bottom = 0.0
+		dimmer.color = Color(0, 0, 0, 0.45)
+		dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
+		current_root.add_child(dimmer)
+
+		var box := PanelContainer.new()
+		box.anchor_left = 0.35
+		box.anchor_top = 0.35
+		box.anchor_right = 0.65
+		box.anchor_bottom = 0.65
+		box.offset_left = 0.0
+		box.offset_top = 0.0
+		box.offset_right = 0.0
+		box.offset_bottom = 0.0
+		current_root.add_child(box)
+
+		var vbox := VBoxContainer.new()
+		vbox.anchor_left = 0.0
+		vbox.anchor_top = 0.0
+		vbox.anchor_right = 1.0
+		vbox.anchor_bottom = 1.0
+		vbox.offset_left = 16
+		vbox.offset_top = 16
+		vbox.offset_right = -16
+		vbox.offset_bottom = -16
+		vbox.add_theme_constant_override("separation", 8)
+		box.add_child(vbox)
+
+		var title := Label.new()
+		var stage := int(payload.get("stage", 1))
+		var stages := int(payload.get("stages", 1))
+		title.text = "PHONE (%d/%d)" % [stage, stages]
+		vbox.add_child(title)
+
+		var info := Label.new()
+		var can_silence := bool(payload.get("can_silence", true))
+		info.text = "Incoming call. Silence the phone." if can_silence else "Incoming call. Phone cannot be silenced."
+		vbox.add_child(info)
+
+		var btn := Button.new()
+		btn.text = "Silence"
+		btn.disabled = not can_silence
+		vbox.add_child(btn)
+		btn.pressed.connect(func() -> void:
+			if controller != null and controller.has_method("_silence_phone"):
+				controller.call("_silence_phone")
+			if controller != null and controller.has_method("close_overlay"):
+				controller.call("close_overlay")
+		)
 	if id == "CASE_FOLDER":
 		var dimmer := ColorRect.new()
 		dimmer.anchor_left = 0.0

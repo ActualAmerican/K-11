@@ -1,7 +1,7 @@
 class_name RevolverSim
 extends RefCounted
 
-func run(seed_u64: int, shots: int = 50, tier: int = 6) -> Dictionary:
+func run(seed_u64: int, shots: int = 50, _tier: int = 6) -> Dictionary:
 	var errors: Array[String] = []
 	var sys: RevolverSystem = RevolverSystem.new()
 	var tier_results: Dictionary = {}
@@ -94,14 +94,14 @@ func run(seed_u64: int, shots: int = 50, tier: int = 6) -> Dictionary:
 	var lines: Array[String] = []
 	lines.append(summary)
 	for t3 in tiers:
-		var tr: Dictionary = tier_results.get(t3, {})
+		var tier_result: Dictionary = tier_results.get(t3, {})
 		lines.append("REVOLVER_SIM_TIER: t=%d shots=%d cycles_reset=%d clicks=%d booms=%d ok=%s" % [
 			t3,
-			int(tr.get("shots", 0)),
-			int(tr.get("cycles_reset", 0)),
-			int(tr.get("clicks", 0)),
-			int(tr.get("booms", 0)),
-			str(tr.get("ok", false))
+			int(tier_result.get("shots", 0)),
+			int(tier_result.get("cycles_reset", 0)),
+			int(tier_result.get("clicks", 0)),
+			int(tier_result.get("booms", 0)),
+			str(tier_result.get("ok", false))
 		])
 	return { "ok": ok, "errors": errors, "summary": "\n".join(lines) }
 

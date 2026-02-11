@@ -14,6 +14,26 @@ var run_seed_u64: int = 0
 var _revolver_widget: Node = null
 var _revolver_sys: RevolverSystem = null
 var _revolver_missing_logged: bool = false
+var _noise_sys: NoiseSystem = null
+var _noise_widget: Node = null
+var _noise_missing_logged: bool = false
+var _noise_carryover_next_suspect: bool = false
+var _clock: GameClock = null
+var _phone: PhoneSystem = null
+var _alarm_sys: AlarmSystem = null
+var _alarm_flash: CanvasItem = null
+var _breach_active: bool = false
+var _deadline_total_s: float = 0.0
+var _deadline_left_s: float = 0.0
+var _deadline_active: bool = false
+var _deadline_expired: bool = false
+var _deadline_stage_index: int = 0
+var _deadline_stage_count: int = 0
+var _deadline_stage_durations: Array[int] = []
+var _phone_forced: bool = false
+var _tick_1hz_accum: float = 0.0
+var _clock_rng: RandomNumberGenerator = RandomNumberGenerator.new()
+var _game_over_active: bool = false
 var suspect_index: int = 0
 var suspect_seed_value: int = 0
 var suspect_seed_text: String = ""
@@ -31,6 +51,12 @@ var _case_folder_image: Image = null
 var _case_folder_image_size: Vector2i = Vector2i.ZERO
 var _case_folder_outline: Node = null
 var _case_folder_hover: bool = false
+var _phone_node: Sprite2D = null
+var _phone_base_modulate: Color = Color(1, 1, 1, 1)
+var _phone_image: Image = null
+var _phone_image_size: Vector2i = Vector2i.ZERO
+var _phone_outline: Node = null
+var _phone_hover: bool = false
 var _pending_verdict_id: String = ""
 var _verdict_buttons: Array[Button] = []
 var _verdict_committed: bool = false
@@ -60,10 +86,13 @@ var overlay_id: String = ""
 @export var dev_log_overlays: bool = true
 @export var dev_allow_suspect_io: bool = true
 @export var dev_enable_scapegoat: bool = true
+@export var time_policy: InterrogationTimePolicy
 
 var _hud_layer: CanvasLayer
 var _hud_label: RichTextLabel
 var _hud_hotkeys_label: Label
+var _hud_hotkeys_label2: Label
+var _hud_hotkeys_labels: Array[Label] = []
 var _hud_event_log_label: Label
 var _last_logged_overlay_open: bool = false
 var _last_logged_overlay_id: String = ""
@@ -112,14 +141,26 @@ func _ready() -> void:
 	_overlay_manager.name = &"OverlayManager"
 	_overlay_manager.call("set_controller", self)
 	add_child(_overlay_manager)
+	if time_policy == null:
+		time_policy = preload("res://content/policies/InterrogationTimePolicy_Default.tres")
+		if time_policy == null:
+			time_policy = InterrogationTimePolicy.new()
 	_init_seed()
 	_init_revolver_system()
+	_init_noise_system()
+	_init_alarm_system()
+	_clock = GameClock.new()
+	_clock.setup(time_policy.ingame_minutes_per_real_second, time_policy.clock_start_minutes)
+	_phone = PhoneSystem.new()
+	_phone.setup(_noise_sys, time_policy)
 	_install_hud()
 	_init_verdict_flow_ui()
 	_install_seed_prompt()
 	_set_dev_hud_visible(dev_hud_enabled)
 	_cleanup_duplicate_hud_labels()
 	_cache_camera()
+	_cache_phone()
+	_cache_alarm_stub()
 	_update_app_state()
 	_apply_state_policy("ready")
 	_cache_case_folder()
@@ -137,6 +178,33 @@ func _process(_delta: float) -> void:
 			_log("SEED OVERRIDE -> %s" % forced_seed_text)
 			_init_seed()
 			_reset_run_state()
+	if app_state == AppState.GAME:
+		if _phone != null and not _breach_active:
+			_phone.tick(_delta)
+		if _alarm_sys != null:
+			_alarm_sys.tick(_delta)
+		_tick_1hz_accum = minf(_tick_1hz_accum + _delta, 1.0)
+		while _tick_1hz_accum >= 1.0:
+			_tick_1hz_accum -= 1.0
+			if _clock != null:
+				_clock.tick(1.0)
+			if _deadline_active and not _deadline_expired and not _breach_active:
+				_deadline_left_s -= 1.0
+				if _deadline_left_s <= 0.0:
+					_deadline_left_s = 0.0
+					_deadline_expired = true
+					_deadline_active = false
+					if _phone != null:
+						_phone.start("deadline")
+					if _deadline_stage_index >= _deadline_stage_count - 1:
+						_phone_forced = true
+						_log("DEADLINE EXPIRED -> PHONE FORCED")
+					else:
+						_phone_forced = false
+						_log("DEADLINE EXPIRED -> PHONE RINGING")
+		if _noise_sys != null:
+			_noise_sys.tick(_delta)
+			_sync_noise_widget(false)
 	if dev_hud_enabled:
 		_hud_refresh_accum += _delta
 		if _hud_refresh_accum >= HUD_REFRESH_INTERVAL:
@@ -146,6 +214,8 @@ func _process(_delta: float) -> void:
 	if app_state == AppState.GAME and not overlay_open:
 		if _case_folder == null:
 			_cache_case_folder()
+		if _phone_node == null:
+			_cache_phone()
 		if _camera_node == null:
 			_cache_camera()
 		if _case_folder != null and _camera_node != null:
@@ -155,6 +225,12 @@ func _process(_delta: float) -> void:
 				(_case_folder_outline as CanvasItem).visible = _case_folder_hover
 			if not _case_folder_hover:
 				_clear_folder_highlight()
+		if _phone_node != null and _camera_node != null:
+			var mouse_world_phone: Vector2 = _camera_node.get_global_mouse_position()
+			var phone_active: bool = _phone != null and _phone.ringing
+			_phone_hover = phone_active and _is_mouse_over_phone(mouse_world_phone)
+			if _phone_outline is CanvasItem:
+				(_phone_outline as CanvasItem).visible = _phone_hover
 
 func _input(event: InputEvent) -> void:
 	if get_viewport().is_input_handled():
@@ -182,6 +258,8 @@ func _unhandled_input(event: InputEvent) -> void:
 				_cache_camera()
 			if _case_folder == null:
 				_cache_case_folder()
+			if _phone_node == null:
+				_cache_phone()
 			if _camera_node == null:
 				return
 			var mouse_world: Vector2 = _camera_node.get_global_mouse_position()
@@ -189,6 +267,12 @@ func _unhandled_input(event: InputEvent) -> void:
 				var payload := _build_case_folder_payload()
 				open_overlay(OVERLAY_CASE_FOLDER_ID, payload)
 				get_viewport().set_input_as_handled()
+				return
+			var phone_active: bool = _phone != null and _phone.ringing
+			if phone_active and not _breach_active and _phone_node != null and _is_mouse_over_phone(mouse_world):
+				open_overlay("PHONE", {"can_silence": not _phone_forced, "stage": _deadline_stage_index + 1, "stages": _deadline_stage_count})
+				get_viewport().set_input_as_handled()
+				return
 
 func _handle_dev_hotkeys(event: InputEvent) -> bool:
 	if dev_allow_escape_hatch and event.is_action_pressed("ui_cancel"):
@@ -391,6 +475,32 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 					return true
 				_apply_danger_penalty(100, "DEV:+100")
 				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_N:
+				_apply_noise_trigger(&"dev_noise_spike", {"amount": 10, "reason": "DEV:+10"})
+				return true
+
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_M:
+				if _phone != null:
+					var was_on: bool = _phone.ringing
+					_phone.toggle_dev()
+					_log("NOISE DEV: phone_ringing %s" % ("OFF" if was_on else "ON"))
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_P:
+				_noise_carryover_next_suspect = true
+				_log("NOISE DEV: carryover enabled for next suspect")
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_A:
+				_apply_noise_trigger(&"attempt_failure_beep", {"source": "dev"})
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_G:
+				_apply_noise_trigger(&"camera_interference", {"source": "dev"})
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_B:
+				_apply_noise_trigger(&"vent_drill", {"source": "dev"})
+				return true
+			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_D:
+				_apply_noise_trigger(&"case_handling_failure", {"source": "dev"})
+				return true
 			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_T:
 				var sim: RevolverSim = RevolverSim.new()
 				var tier: int = int(_revolver_sys.danger) if _revolver_sys != null else 6
@@ -570,12 +680,24 @@ func _install_hud() -> void:
 	_hud_label.bbcode_enabled = true
 	_hud_label.fit_content = true
 	_hud_label.scroll_active = false
+	_hud_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	_hud_label.add_theme_constant_override("outline_size", 2)
 	_hud_layer.add_child(_hud_label)
 
 	_hud_hotkeys_label = Label.new()
 	_hud_hotkeys_label.name = &"DevHotkeys"
 	_hud_hotkeys_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_hotkeys_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	_hud_hotkeys_label.add_theme_constant_override("outline_size", 2)
 	_hud_layer.add_child(_hud_hotkeys_label)
+
+	_hud_hotkeys_label2 = Label.new()
+	_hud_hotkeys_label2.name = &"DevHotkeys2"
+	_hud_hotkeys_label2.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hud_hotkeys_label2.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	_hud_hotkeys_label2.add_theme_constant_override("outline_size", 2)
+	_hud_layer.add_child(_hud_hotkeys_label2)
+	_hud_hotkeys_labels = [_hud_hotkeys_label, _hud_hotkeys_label2]
 
 	_hud_event_log_label = Label.new()
 	_hud_event_log_label.name = &"DevEventLogLabel"
@@ -585,6 +707,8 @@ func _install_hud() -> void:
 	_hud_event_log_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
 	_hud_event_log_label.clip_text = true
 	_hud_event_log_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_hud_event_log_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+	_hud_event_log_label.add_theme_constant_override("outline_size", 2)
 	_hud_layer.add_child(_hud_event_log_label)
 
 func _install_seed_prompt() -> void:
@@ -726,6 +850,147 @@ func _sync_revolver_widget() -> void:
 			_revolver_sys.current_index
 		)
 
+func _init_noise_system() -> void:
+	if _noise_sys == null:
+		_noise_sys = preload("res://Scripts/systems/NoiseSystem.gd").new()
+	_noise_sys.reset_run()
+	if _noise_sys.has_method("set_policy"):
+		_noise_sys.call("set_policy", time_policy)
+	if _noise_sys.has_method("set_dev_logging"):
+		_noise_sys.call("set_dev_logging", dev_log_enabled, Callable(self, "_log"))
+	if _noise_sys.has_signal("noise_changed"):
+		var cb := Callable(self, "_on_noise_changed")
+		if not _noise_sys.is_connected("noise_changed", cb):
+			_noise_sys.connect("noise_changed", cb)
+	if _noise_sys.has_signal("alarm_triggered"):
+		var cb2 := Callable(self, "_on_noise_alarm")
+		if not _noise_sys.is_connected("alarm_triggered", cb2):
+			_noise_sys.connect("alarm_triggered", cb2)
+	if _noise_sys.has_signal("breach_started"):
+		var cb3 := Callable(self, "_on_noise_breach_started")
+		if not _noise_sys.is_connected("breach_started", cb3):
+			_noise_sys.connect("breach_started", cb3)
+	if _noise_sys.has_signal("breach_resolved"):
+		var cb4 := Callable(self, "_on_noise_breach_resolved")
+		if not _noise_sys.is_connected("breach_resolved", cb4):
+			_noise_sys.connect("breach_resolved", cb4)
+	_cache_noise_widget()
+	_sync_noise_widget(true)
+
+func _init_alarm_system() -> void:
+	_alarm_sys = AlarmSystem.new()
+	var grace: int = 30
+	if time_policy != null:
+		grace = int(time_policy.breach_grace_s)
+	_alarm_sys.configure(grace)
+	var cb := Callable(self, "_on_alarm_timed_out")
+	_alarm_sys.alarm_timed_out.connect(cb)
+
+func _cache_alarm_stub() -> void:
+	var root := get_tree().current_scene
+	if root == null:
+		return
+	var layer := root.find_child("Alarm", true, false)
+	var flash: Node = null
+	if layer != null:
+		flash = layer.get_node_or_null("Flash")
+	if layer == null or flash == null:
+		layer = root.find_child("AlarmStub", true, false)
+		if layer == null:
+			return
+		flash = layer.get_node_or_null("Flash")
+	if flash != null and flash is CanvasItem:
+		_alarm_flash = flash
+		if _alarm_sys != null:
+			_alarm_sys.bind_stub(_alarm_flash)
+
+func _cache_noise_widget() -> void:
+	if is_instance_valid(_noise_widget):
+		return
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	var sound_node: Node = root.find_child("Sound", true, false)
+	if sound_node == null:
+		if not _noise_missing_logged:
+			_noise_missing_logged = true
+			_log("NOISE: n/a (Sound node not found in current scene)")
+		return
+	_noise_missing_logged = false
+	var existing: Node = sound_node.get_node_or_null("NoiseMeter")
+	if existing != null:
+		_noise_widget = existing
+		return
+	var w: Node = preload("res://Scripts/ui/NoiseMeterWidget.gd").new()
+	w.name = &"NoiseMeter"
+	sound_node.add_child(w)
+	_noise_widget = w
+
+func _sync_noise_widget(immediate: bool) -> void:
+	if _noise_sys == null:
+		return
+	if not is_instance_valid(_noise_widget):
+		_cache_noise_widget()
+	if not is_instance_valid(_noise_widget):
+		return
+	if _noise_widget.has_method("set_noise_value"):
+		_noise_widget.call("set_noise_value", _noise_sys.get_noise(), immediate)
+
+func _on_noise_changed(_before: int, _after: int, _reason: String, _meta: Dictionary) -> void:
+	_sync_noise_widget(false)
+
+func _on_noise_alarm(v: int) -> void:
+	_emit_run_event("noise_alarm", {"noise": v})
+	_log("NOISE ALARM: %d/100" % v)
+
+func _on_noise_breach_started(meta: Dictionary) -> void:
+	if _breach_active:
+		return
+	_breach_active = true
+	_deadline_active = false
+	_deadline_expired = false
+	if _phone != null:
+		_phone.stop()
+	if overlay_open:
+		close_overlay()
+	if _alarm_sys != null:
+		if time_policy != null:
+			var grace := int(time_policy.breach_grace_s)
+			_alarm_sys.configure(grace)
+			_log("ALARM grace_s=%d" % grace)
+		_alarm_sys.start(meta)
+		_log("ALARM seconds_left=%d" % _alarm_sys.get_seconds_left())
+	_emit_run_event("noise_breach_started", meta)
+	_log("NOISE BREACH STARTED")
+
+func _on_noise_breach_resolved(success: bool, meta: Dictionary) -> void:
+	_breach_active = false
+	if _alarm_sys != null:
+		_alarm_sys.stop(meta)
+	_emit_run_event("noise_breach_resolved", {"success": success, "meta": meta})
+	_log("NOISE BREACH RESOLVED")
+
+func _on_alarm_timed_out(meta: Dictionary) -> void:
+	if _game_over_active:
+		return
+	_game_over_active = true
+	_breach_active = false
+	if overlay_open:
+		close_overlay()
+	open_overlay("GAME_OVER", {"reason": "Killed by Noise Breach", "meta": meta})
+	_emit_run_event("noise_breach_timeout", meta)
+	_log("NOISE BREACH TIMEOUT -> GAME OVER")
+
+func _on_game_over_restart() -> void:
+	if overlay_open:
+		close_overlay()
+	_game_over_active = false
+	_reset_run_state()
+
+func _on_game_over_quit() -> void:
+	_game_over_active = false
+	get_tree().quit()
+
 func request_shot(shot_type: ShotType, will_boom: bool, reason: String = "") -> bool:
 	var allowed := false
 	match shot_type:
@@ -765,11 +1030,11 @@ func _play_shot_cinematic(_will_boom: bool, shot_type: ShotType, reason: String)
 		_log("SHOT_ROLL failed type=%s reason=%s" % [_shot_type_name(shot_type), reason])
 		return false
 	var idx := int(roll.get("index", -1))
-	var chamber_id := int(roll.get("chamber_id", idx + 1 if idx >= 0 else -1))
-	var was_live := bool(roll.get("was_live", false))
-	var target := _shot_target_from_reason(reason)
-	var live_count := 0
-	var empty_count := 0
+	var chamber_id: int = int(roll.get("chamber_id", idx + 1 if idx >= 0 else -1))
+	var was_live: bool = bool(roll.get("was_live", false))
+	var target: String = _shot_target_from_reason(reason)
+	var live_count: int = 0
+	var empty_count: int = 0
 	if _revolver_sys != null:
 		var live_mask := int(_revolver_sys.live_mask)
 		var consumed_mask := int(_revolver_sys.consumed_mask)
@@ -796,7 +1061,7 @@ func _play_shot_cinematic(_will_boom: bool, shot_type: ShotType, reason: String)
 			rev.disconnect("verdict_boom", _shot_cb_boom)
 		_shot_cb_boom = func() -> void:
 			_revolver_sys.consume_chamber(idx, was_live)
-			var kill := target if was_live else "none"
+			var kill: String = target if was_live else "none"
 			_log("SHOT_RESULT type=%s target=%s result=BOOM chamber=%d kill=%s live_mask=%d consumed_mask=%d" % [
 				_shot_type_name(shot_type),
 				target,
@@ -805,6 +1070,7 @@ func _play_shot_cinematic(_will_boom: bool, shot_type: ShotType, reason: String)
 				int(_revolver_sys.live_mask),
 				int(_revolver_sys.consumed_mask)
 			])
+			_apply_noise_trigger(&"revolver_fire", {"target": target, "result": "BOOM", "chamber": chamber_id})
 			var d: Dictionary = _revolver_sys.debug_chambers()
 			_log("REVOLVER_STATE: full=%s empty=%s consumed=%s available=%s" % [
 				_fmt_ids(d.get("full", [])),
@@ -818,7 +1084,7 @@ func _play_shot_cinematic(_will_boom: bool, shot_type: ShotType, reason: String)
 			rev.disconnect("verdict_click", _shot_cb_click)
 		_shot_cb_click = func() -> void:
 			_revolver_sys.consume_chamber(idx, was_live)
-			var kill := target if was_live else "none"
+			var kill: String = target if was_live else "none"
 			_log("SHOT_RESULT type=%s target=%s result=CLICK chamber=%d kill=%s live_mask=%d consumed_mask=%d" % [
 				_shot_type_name(shot_type),
 				target,
@@ -827,7 +1093,9 @@ func _play_shot_cinematic(_will_boom: bool, shot_type: ShotType, reason: String)
 				int(_revolver_sys.live_mask),
 				int(_revolver_sys.consumed_mask)
 			])
+			_apply_noise_trigger(&"revolver_fire", {"target": target, "result": "CLICK", "chamber": chamber_id})
 			if shot_type == ShotType.VERDICT and target == "suspect":
+				_apply_noise_trigger(&"empty_click_scream", {"target": "suspect", "chamber": chamber_id})
 				_emit_run_event("empty_click_outcome", {
 					"source": "revolver",
 					"shot_type": "VERDICT",
@@ -909,9 +1177,9 @@ func _fmt_ids(ids: Array) -> String:
 		out.append(str(v))
 	return ", ".join(out)
 
-func _emit_run_event(name: String, payload: Dictionary) -> void:
-	run_event.emit(name, payload)
-	_log("RUN_EVENT %s %s" % [name, payload])
+func _emit_run_event(event_name: String, payload: Dictionary) -> void:
+	run_event.emit(event_name, payload)
+	_log("RUN_EVENT %s %s" % [event_name, payload])
 
 func _apply_danger_penalty(points: int, reason: String) -> int:
 	if _revolver_sys == null:
@@ -941,11 +1209,19 @@ func _apply_danger_penalty(points: int, reason: String) -> int:
 
 func penalty_attempt_loss(detail: String = "", points: int = 100) -> int:
 	var suffix := (":" + detail) if detail != "" else ""
+	_apply_noise_trigger(&"attempt_failure_beep", {"detail": detail, "points": points})
 	return _apply_danger_penalty(points, "ATTEMPT_LOSS" + suffix)
 
 func penalty_dirty_action(action_id: String = "", points: int = 100) -> int:
 	var suffix := (":" + action_id) if action_id != "" else ""
 	return _apply_danger_penalty(points, "DIRTY_ACTION" + suffix)
+
+func _apply_noise_trigger(id: StringName, meta: Dictionary = {}) -> void:
+	if _noise_sys != null and _noise_sys.has_method("apply_trigger"):
+		_noise_sys.call("apply_trigger", id, meta)
+
+func apply_case_handling_failure(meta: Dictionary = {}) -> void:
+	_apply_noise_trigger(&"case_handling_failure", meta)
 
 func _trigger_overflow_discharge(reason: String) -> void:
 	if overlay_open:
@@ -1153,6 +1429,64 @@ func _ensure_case_folder_outline() -> void:
 	outline.visible = false
 	_case_folder.add_child(outline)
 
+func _cache_phone() -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	if _phone_node != null:
+		return
+	var phone_node := root.find_child("Phone", true, false)
+	if phone_node is Sprite2D:
+		_phone_node = phone_node as Sprite2D
+		_phone_base_modulate = _phone_node.modulate
+		if _phone_node.texture != null:
+			_phone_image = _phone_node.texture.get_image()
+			if _phone_image != null:
+				_phone_image_size = _phone_image.get_size()
+		_ensure_phone_outline()
+
+func _is_mouse_over_phone(mouse_world: Vector2) -> bool:
+	if _phone_node == null or _phone_node.texture == null:
+		return false
+	var local: Vector2 = _phone_node.to_local(mouse_world)
+	var size: Vector2 = _phone_node.texture.get_size()
+	var rect := Rect2(Vector2.ZERO, size)
+	if _phone_node.centered:
+		rect.position = -size * 0.5
+	if not rect.has_point(local):
+		return false
+
+	if _phone_image != null and _phone_image_size != Vector2i.ZERO:
+		var tex_pos: Vector2 = local
+		if _phone_node.centered:
+			tex_pos += size * 0.5
+		var ix: int = int(floor(tex_pos.x))
+		var iy: int = int(floor(tex_pos.y))
+		if ix >= 0 and iy >= 0 and ix < _phone_image_size.x and iy < _phone_image_size.y:
+			var a: float = _phone_image.get_pixel(ix, iy).a
+			return a > 0.1
+
+	return true
+
+func _ensure_phone_outline() -> void:
+	if _phone_node == null:
+		return
+	if _phone_outline != null:
+		return
+	if _phone_node.texture == null:
+		return
+
+	var outline: Sprite2D = preload("res://Scripts/ui/AlphaOutline.gd").new() as Sprite2D
+	_phone_outline = outline
+	if outline == null:
+		return
+	outline.name = "PhoneHoverOutline"
+	outline.texture = _phone_node.texture
+	outline.centered = _phone_node.centered
+	outline.z_index = _phone_node.z_index + 1
+	outline.visible = false
+	_phone_node.add_child(outline)
+
 func _build_case_folder_payload() -> Dictionary:
 	if current_suspect == null:
 		return {
@@ -1199,6 +1533,21 @@ func _build_case_folder_payload() -> Dictionary:
 		"right_text": "\n".join(right_lines)
 	}
 
+func _silence_phone() -> void:
+	if _phone_forced:
+		_log("PHONE: forced (cannot silence)")
+		return
+	if _phone != null:
+		_phone.stop()
+		if _deadline_stage_index < _deadline_stage_count - 1:
+			_deadline_stage_index += 1
+			if _deadline_stage_index >= 0 and _deadline_stage_index < _deadline_stage_durations.size():
+				_deadline_total_s = float(_deadline_stage_durations[_deadline_stage_index])
+				_deadline_left_s = _deadline_total_s
+				_deadline_expired = false
+				_deadline_active = true
+		_log("PHONE: silenced (stage=%d)" % _deadline_stage_index)
+
 func _set_dev_hud_visible(visible: bool) -> void:
 	if visible and not is_instance_valid(_hud_layer):
 		_install_hud()
@@ -1209,6 +1558,11 @@ func _set_dev_hud_visible(visible: bool) -> void:
 		_hud_label.visible = visible
 	if is_instance_valid(_hud_hotkeys_label):
 		_hud_hotkeys_label.visible = visible
+	if is_instance_valid(_hud_hotkeys_label2):
+		_hud_hotkeys_label2.visible = visible
+	for lbl in _hud_hotkeys_labels:
+		if is_instance_valid(lbl):
+			lbl.visible = visible
 	if is_instance_valid(_hud_event_log_label):
 		_hud_event_log_label.visible = visible
 
@@ -1272,6 +1626,9 @@ func _on_verdict_pressed(verdict_id: String) -> void:
 	_verdict_committed = true
 	_verdict_choice = verdict_id
 	_pending_verdict_id = verdict_id
+	_deadline_active = false
+	if _phone != null:
+		_phone.stop()
 
 	for btn in _verdict_buttons:
 		if btn != null:
@@ -1314,6 +1671,9 @@ func _on_verdict_overlay_continued() -> void:
 
 func _advance_to_next_suspect() -> void:
 	suspect_index += 1
+	_deadline_active = false
+	if _phone != null:
+		_phone.stop()
 	_refresh_suspect_seed()
 	_update_hud()
 
@@ -1365,14 +1725,14 @@ func _update_hud() -> void:
 				full_list.append(chamber_id)
 			else:
 				empty_list.append(chamber_id)
-	var danger_band := "GREEN"
+	var danger_band: String = "GREEN"
 	if danger_fill >= 76:
 		danger_band = "RED"
 	elif danger_fill >= 51:
 		danger_band = "ORANGE"
 	elif danger_fill >= 26:
 		danger_band = "YELLOW"
-	var band_color := "9AD14B"
+	var band_color: String = "9AD14B"
 	match danger_band:
 		"RED":
 			band_color = "E55454"
@@ -1380,8 +1740,12 @@ func _update_hud() -> void:
 			band_color = "E28C3B"
 		"YELLOW":
 			band_color = "E5D04E"
-	var band_markup := "[color=#%s]%s[/color]" % [band_color, danger_band]
-	var hotkeys_text: String = "HOTKEYS:\nF12 EndGame\nCtrl+Shift+I ImportSuspect\nCtrl+Shift+E ExportSuspect\nCtrl+Shift+R AddRound\nCtrl+Shift+] Tier+Reload\nCtrl+Shift+[ Tier-Reload\nCtrl+Shift+\\ Tier0+Reload\n0..6 SetLiveRounds\nCtrl+Shift+Z DangerReset\nCtrl+Shift+X Danger+25\nCtrl+Shift+C Danger+50\nCtrl+Shift+V Danger+100\nCtrl+Shift+T RevolverSim (50)\nCtrl+Shift+K Revolver ClickTest\nCtrl+Shift+L Revolver BoomTest\nF7 CopySeed\nF6 LoadSeed\nF4 EdgePan\nF3 Verdict?\nF2 Next?\nF1 HUD"
+	var band_markup: String = "[color=#%s]%s[/color]" % [band_color, danger_band]
+	var clock_text: String = "n/a"
+	if _clock != null:
+		clock_text = _clock.format_hhmm(_clock.get_clock_minutes_int())
+	var deadline_left_text: String = "%ds" % maxi(int(ceil(_deadline_left_s)), 0)
+	var hotkeys_text: String = "HOTKEYS:\nF12 EndGame\nCtrl+Shift+I ImportSuspect\nCtrl+Shift+E ExportSuspect\nCtrl+Shift+R AddRound\nCtrl+Shift+] Tier+Reload\nCtrl+Shift+[ Tier-Reload\nCtrl+Shift+\\ Tier0+Reload\n0..6 SetLiveRounds\nCtrl+Shift+Z DangerReset\nCtrl+Shift+X Danger+25\nCtrl+Shift+C Danger+50\nCtrl+Shift+V Danger+100\nCtrl+Shift+N Noise+10\nCtrl+Shift+M PhoneRing Toggle\nCtrl+Shift+P Noise Carryover Next\nCtrl+Shift+A AttemptFail Beep\nCtrl+Shift+G Camera Interf\nCtrl+Shift+B Vent Drill\nCtrl+Shift+D Case Fail\nCtrl+Shift+T RevolverSim (50)\nCtrl+Shift+K Revolver ClickTest\nCtrl+Shift+L Revolver BoomTest\nF7 CopySeed\nF6 LoadSeed\nF4 EdgePan\nF3 Verdict?\nF2 Next?\nF1 HUD"
 	var seed64_text: String = SeedUtil.hex16(run_seed_u64)
 	_hud_label.text = "\n".join([
 		_format_hud_line("STATE", _state_name(app_state)),
@@ -1395,11 +1759,14 @@ func _update_hud() -> void:
 		_format_hud_line("SUSPECT_ID", current_suspect.short_id() if current_suspect != null else "n/a"),
 		_format_hud_line("SILH", current_suspect.silhouette_label if current_suspect != null else "n/a"),
 		_format_hud_line("DEADLINE", current_suspect.get_deadline_label() if current_suspect != null else "n/a"),
+		_format_hud_line("DEADLINE_LEFT", deadline_left_text),
+		_format_hud_line("CLOCK", clock_text),
 		_format_hud_line("TRUTH", current_suspect.truth_label() if current_suspect != null else "n/a"),
 		_format_hud_line("DANGER_TIER", "%d/6" % int(snap.get("danger", 0)) if _revolver_sys != null else "0/6"),
 		_format_hud_line("DANGER_FILL", "%d/100" % danger_fill),
 		_format_hud_line("DANGER_POINTS", str(danger_fill)),
 		_format_hud_line("DANGER_BAND", band_markup),
+		_format_hud_line("NOISE", "%d/100" % (_noise_sys.get_noise() if _noise_sys != null else 0)),
 		_format_hud_line("CHAMBERS_FULL", ", ".join(full_list)),
 		_format_hud_line("CHAMBERS_EMPTY", ", ".join(empty_list)),
 		"",
@@ -1409,10 +1776,34 @@ func _update_hud() -> void:
 		rt.autowrap_mode = TextServer.AUTOWRAP_OFF
 		rt.size = rt.get_minimum_size()
 	if is_instance_valid(_hud_hotkeys_label):
-		_hud_hotkeys_label.text = hotkeys_text
+		var hotkey_lines: Array[String] = []
+		for s in hotkeys_text.split("\n"):
+			hotkey_lines.append(String(s))
+		var max_lines_per_col: int = 12
+		var num_cols: int = int(ceil(float(hotkey_lines.size()) / float(max_lines_per_col)))
+		while _hud_hotkeys_labels.size() < num_cols:
+			var idx: int = _hud_hotkeys_labels.size() + 1
+			var lbl: Label = Label.new()
+			lbl.name = StringName("DevHotkeys%d" % idx)
+			lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			lbl.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
+			lbl.add_theme_constant_override("outline_size", 2)
+			_hud_layer.add_child(lbl)
+			_hud_hotkeys_labels.append(lbl)
+		for i in range(_hud_hotkeys_labels.size()):
+			if i >= num_cols:
+				_hud_hotkeys_labels[i].text = ""
+				continue
+			var start: int = i * max_lines_per_col
+			var end: int = min(hotkey_lines.size(), start + max_lines_per_col)
+			_hud_hotkeys_labels[i].text = "\n".join(hotkey_lines.slice(start, end))
 		var viewport_size: Vector2 = get_viewport().get_visible_rect().size
-		var hotkeys_size: Vector2 = _hud_hotkeys_label.get_minimum_size()
-		_hud_hotkeys_label.position = Vector2(12, max(viewport_size.y - hotkeys_size.y - 12.0, 12.0))
+		var x: float = 12.0
+		for i in range(num_cols):
+			var lbl2: Label = _hud_hotkeys_labels[i]
+			var size2: Vector2 = lbl2.get_minimum_size()
+			lbl2.position = Vector2(x, max(viewport_size.y - size2.y - 12.0, 12.0))
+			x += size2.x + 16.0
 	if is_instance_valid(_hud_event_log_label):
 		_update_event_log_display()
 		var viewport_size2: Vector2 = get_viewport().get_visible_rect().size
@@ -1742,6 +2133,21 @@ func _reset_run_state() -> void:
 	if overlay_open:
 		close_overlay()
 	run_state = RunState.IDLE
+	_breach_active = false
+	if _alarm_sys != null:
+		_alarm_sys.stop({"reason": "reset"})
+	_game_over_active = false
+	if _clock != null:
+		_clock.reset()
+	_deadline_active = false
+	_deadline_expired = false
+	_deadline_total_s = 0.0
+	_deadline_left_s = 0.0
+	_deadline_stage_index = 0
+	_deadline_stage_count = 0
+	_deadline_stage_durations.clear()
+	_phone_forced = false
+	_tick_1hz_accum = 0.0
 	suspect_index = 0
 	_refresh_suspect_seed()
 	if _revolver_sys != null:
@@ -1750,6 +2156,12 @@ func _reset_run_state() -> void:
 		_revolver_sys.set_danger_fill(0)
 		_revolver_sys.load_fresh_cylinder()
 		_sync_revolver_widget()
+	if _noise_sys != null:
+		_noise_sys.reset_run()
+		_sync_noise_widget(true)
+	_noise_carryover_next_suspect = false
+	if _phone != null:
+		_phone.stop()
 	_log("SUSPECT_STREAM reset idx=%d seed=%s" % [suspect_index, suspect_seed_text])
 	_apply_state_policy("seed")
 	_update_hud()
@@ -1998,4 +2410,49 @@ func _refresh_suspect_seed() -> void:
 	current_suspect = SuspectFactory.generate(run_seed_u64, run_seed_text, suspect_index)
 	if current_suspect != null:
 		_log("SUSPECT idx=%d seed=%s id=%s truth=%s" % [suspect_index, suspect_seed_text, current_suspect.id, current_suspect.truth_label()])
+	if _noise_sys != null and _noise_sys.has_method("set_context"):
+		_noise_sys.call("set_context", {"suspect_index": suspect_index, "suspect_id": current_suspect.short_id() if current_suspect != null else "n/a"})
+	if time_policy == null:
+		time_policy = preload("res://content/policies/InterrogationTimePolicy_Default.tres")
+		if time_policy == null:
+			time_policy = InterrogationTimePolicy.new()
+	if _clock == null and time_policy != null:
+		_clock = GameClock.new()
+		_clock.setup(time_policy.ingame_minutes_per_real_second, time_policy.clock_start_minutes)
+	var dl: int = 0
+	if time_policy != null:
+		dl = time_policy.get_deadline_s(suspect_index)
+	if current_suspect != null:
+		current_suspect.deadline_s = dl
+	_deadline_stage_durations = []
+	_deadline_stage_index = 0
+	_deadline_stage_count = 0
+	if time_policy != null and not time_policy.deadline_stage_multipliers.is_empty():
+		_deadline_stage_count = time_policy.deadline_stage_multipliers.size()
+	if _deadline_stage_count <= 0:
+		_deadline_stage_count = 1
+	for i in range(_deadline_stage_count):
+		if time_policy != null:
+			_deadline_stage_durations.append(time_policy.get_deadline_stage_s(dl, i))
+		else:
+			_deadline_stage_durations.append(dl)
+	_deadline_total_s = float(_deadline_stage_durations[0]) if not _deadline_stage_durations.is_empty() else float(dl)
+	_deadline_left_s = _deadline_total_s
+	_deadline_expired = false
+	_deadline_active = true
+	_phone_forced = false
+	_tick_1hz_accum = 0.0
+	if _phone != null:
+		_phone.stop()
+	if _clock != null and time_policy != null and current_suspect != null:
+		_clock_rng.seed = int(current_suspect.suspect_seed_u64)
+		var gap := time_policy.get_clock_gap_minutes(_clock_rng)
+		_clock.add_minutes(gap)
+	if _noise_sys != null:
+		if _noise_carryover_next_suspect:
+			_noise_sys.start_suspect(_noise_sys.get_noise())
+		else:
+			_noise_sys.start_suspect(0)
+		_noise_carryover_next_suspect = false
+		_sync_noise_widget(true)
 	_reset_verdict_flow()
