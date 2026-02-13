@@ -1,7 +1,7 @@
 extends Node
 
 var current_id: String = ""
-var current_root: Control = null
+var current_root: Node = null
 var _layer: CanvasLayer = null
 var controller: Node = null
 
@@ -19,18 +19,19 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		close()
 
 	current_id = id
-	current_root = Control.new()
-	current_root.name = &"OverlayRoot"
-	current_root.anchor_left = 0.0
-	current_root.anchor_top = 0.0
-	current_root.anchor_right = 1.0
-	current_root.anchor_bottom = 1.0
-	current_root.offset_left = 0.0
-	current_root.offset_top = 0.0
-	current_root.offset_right = 0.0
-	current_root.offset_bottom = 0.0
-	current_root.mouse_filter = Control.MOUSE_FILTER_STOP
-	_layer.add_child(current_root)
+	var root := Control.new()
+	root.name = &"OverlayRoot"
+	root.anchor_left = 0.0
+	root.anchor_top = 0.0
+	root.anchor_right = 1.0
+	root.anchor_bottom = 1.0
+	root.offset_left = 0.0
+	root.offset_top = 0.0
+	root.offset_right = 0.0
+	root.offset_bottom = 0.0
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	_layer.add_child(root)
+	current_root = root
 
 	var panel := Panel.new()
 	panel.anchor_left = 0.0
@@ -41,7 +42,7 @@ func open(id: String, payload: Dictionary = {}) -> void:
 	panel.offset_top = 0.0
 	panel.offset_right = 0.0
 	panel.offset_bottom = 0.0
-	current_root.add_child(panel)
+	root.add_child(panel)
 
 	if id == "DEV_TEST":
 		var label := Label.new()
@@ -60,7 +61,7 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		dimmer.offset_top = 0.0
 		dimmer.offset_right = 0.0
 		dimmer.offset_bottom = 0.0
-		current_root.add_child(dimmer)
+		root.add_child(dimmer)
 
 		var box := PanelContainer.new()
 		box.anchor_left = 0.5
@@ -99,8 +100,14 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		var restart := Button.new()
 		restart.text = "Restart"
 		restart.pressed.connect(func() -> void:
-			if controller != null and controller.has_method("_on_game_over_restart"):
+			if controller != null and controller.has_method("_reset_run_state"):
+				controller.call("_reset_run_state")
+			elif controller != null and controller.has_method("_on_game_over_restart"):
 				controller.call("_on_game_over_restart")
+			elif controller != null:
+				var tree := controller.get_tree()
+				if tree != null:
+					tree.reload_current_scene()
 		)
 		btn_row.add_child(restart)
 
@@ -123,7 +130,7 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		dimmer.offset_bottom = 0.0
 		dimmer.color = Color(0, 0, 0, 0.45)
 		dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
-		current_root.add_child(dimmer)
+		root.add_child(dimmer)
 
 		var box := PanelContainer.new()
 		box.anchor_left = 0.35
@@ -134,7 +141,7 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		box.offset_top = 0.0
 		box.offset_right = 0.0
 		box.offset_bottom = 0.0
-		current_root.add_child(box)
+		root.add_child(box)
 
 		var vbox := VBoxContainer.new()
 		vbox.anchor_left = 0.0
@@ -169,6 +176,110 @@ func open(id: String, payload: Dictionary = {}) -> void:
 			if controller != null and controller.has_method("close_overlay"):
 				controller.call("close_overlay")
 		)
+	if id == "REQ_TERMINAL":
+		var dimmer := ColorRect.new()
+		dimmer.anchor_left = 0.0
+		dimmer.anchor_top = 0.0
+		dimmer.anchor_right = 1.0
+		dimmer.anchor_bottom = 1.0
+		dimmer.offset_left = 0.0
+		dimmer.offset_top = 0.0
+		dimmer.offset_right = 0.0
+		dimmer.offset_bottom = 0.0
+		dimmer.color = Color(0, 0, 0, 0.45)
+		dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
+		root.add_child(dimmer)
+
+		var box := PanelContainer.new()
+		box.anchor_left = 0.35
+		box.anchor_top = 0.35
+		box.anchor_right = 0.65
+		box.anchor_bottom = 0.65
+		box.offset_left = 0.0
+		box.offset_top = 0.0
+		box.offset_right = 0.0
+		box.offset_bottom = 0.0
+		root.add_child(box)
+
+		var vbox := VBoxContainer.new()
+		vbox.anchor_left = 0.0
+		vbox.anchor_top = 0.0
+		vbox.anchor_right = 1.0
+		vbox.anchor_bottom = 1.0
+		vbox.offset_left = 16
+		vbox.offset_top = 16
+		vbox.offset_right = -16
+		vbox.offset_bottom = -16
+		vbox.add_theme_constant_override("separation", 8)
+		box.add_child(vbox)
+
+		var title := Label.new()
+		title.text = String(payload.get("title", "REQUISITION"))
+		vbox.add_child(title)
+
+		var info := Label.new()
+		info.text = String(payload.get("body", ""))
+		vbox.add_child(info)
+
+		var btn := Button.new()
+		btn.text = "Close"
+		vbox.add_child(btn)
+		btn.pressed.connect(func() -> void:
+			if controller != null and controller.has_method("close_overlay"):
+				controller.call("close_overlay")
+		)
+	if id == "CASE_HANDLING":
+		var dimmer := ColorRect.new()
+		dimmer.anchor_left = 0.0
+		dimmer.anchor_top = 0.0
+		dimmer.anchor_right = 1.0
+		dimmer.anchor_bottom = 1.0
+		dimmer.offset_left = 0.0
+		dimmer.offset_top = 0.0
+		dimmer.offset_right = 0.0
+		dimmer.offset_bottom = 0.0
+		dimmer.color = Color(0, 0, 0, 0.45)
+		dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
+		root.add_child(dimmer)
+
+		var box := PanelContainer.new()
+		box.anchor_left = 0.35
+		box.anchor_top = 0.35
+		box.anchor_right = 0.65
+		box.anchor_bottom = 0.65
+		box.offset_left = 0.0
+		box.offset_top = 0.0
+		box.offset_right = 0.0
+		box.offset_bottom = 0.0
+		root.add_child(box)
+
+		var vbox := VBoxContainer.new()
+		vbox.anchor_left = 0.0
+		vbox.anchor_top = 0.0
+		vbox.anchor_right = 1.0
+		vbox.anchor_bottom = 1.0
+		vbox.offset_left = 16
+		vbox.offset_top = 16
+		vbox.offset_right = -16
+		vbox.offset_bottom = -16
+		vbox.add_theme_constant_override("separation", 8)
+		box.add_child(vbox)
+
+		var title := Label.new()
+		title.text = String(payload.get("title", "CASE HANDLING"))
+		vbox.add_child(title)
+
+		var info := Label.new()
+		info.text = String(payload.get("body", ""))
+		vbox.add_child(info)
+
+		var btn := Button.new()
+		btn.text = "File Case"
+		vbox.add_child(btn)
+		btn.pressed.connect(func() -> void:
+			if controller != null and controller.has_method("_on_case_handling_filed"):
+				controller.call("_on_case_handling_filed")
+		)
 	if id == "CASE_FOLDER":
 		var dimmer := ColorRect.new()
 		dimmer.anchor_left = 0.0
@@ -192,7 +303,7 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		case_root.offset_top = 0.0
 		case_root.offset_right = 0.0
 		case_root.offset_bottom = 0.0
-		current_root.add_child(case_root)
+		root.add_child(case_root)
 
 		var case_panel := PanelContainer.new()
 		case_panel.anchor_left = 0.0
@@ -274,6 +385,69 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		right_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		right_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		right_scroll.add_child(right_text)
+	if id == "INTERBREAK_CASE" or id == "INTERBREAK_REQ" or id == "INTERBREAK_EXIT":
+		if current_root != null:
+			current_root.queue_free()
+		var ib_layer := CanvasLayer.new()
+		ib_layer.layer = 220
+		ib_layer.name = &"InterBreakOverlay"
+		get_tree().current_scene.add_child(ib_layer)
+		current_root = ib_layer
+		current_id = id
+
+		var ib_root := Control.new()
+		ib_root.name = &"Root"
+		ib_root.anchor_left = 0
+		ib_root.anchor_top = 0
+		ib_root.anchor_right = 1
+		ib_root.anchor_bottom = 1
+		ib_root.mouse_filter = Control.MOUSE_FILTER_STOP
+		ib_layer.add_child(ib_root)
+
+		var ib_dimmer := ColorRect.new()
+		ib_dimmer.color = Color(0, 0, 0, 0.55)
+		ib_dimmer.anchor_left = 0
+		ib_dimmer.anchor_top = 0
+		ib_dimmer.anchor_right = 1
+		ib_dimmer.anchor_bottom = 1
+		ib_root.add_child(ib_dimmer)
+
+		var ib_panel := PanelContainer.new()
+		ib_panel.anchor_left = 0.5
+		ib_panel.anchor_top = 0.5
+		ib_panel.anchor_right = 0.5
+		ib_panel.anchor_bottom = 0.5
+		ib_panel.offset_left = -380
+		ib_panel.offset_top = -160
+		ib_panel.offset_right = 380
+		ib_panel.offset_bottom = 160
+		ib_root.add_child(ib_panel)
+
+		var ib_vb := VBoxContainer.new()
+		ib_vb.add_theme_constant_override("separation", 10)
+		ib_vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ib_vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		ib_panel.add_child(ib_vb)
+
+		var ib_title := Label.new()
+		ib_title.text = String(payload.get("title", "INTERBREAK"))
+		ib_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ib_vb.add_child(ib_title)
+
+		var ib_body := Label.new()
+		ib_body.text = String(payload.get("body", ""))
+		ib_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		ib_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ib_vb.add_child(ib_body)
+
+		var ib_continue := Button.new()
+		ib_continue.text = "Continue"
+		ib_continue.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		ib_continue.pressed.connect(func() -> void:
+			if controller != null:
+				controller.call("_on_interbreak_continue")
+		)
+		ib_vb.add_child(ib_continue)
 
 func close() -> void:
 	if current_root != null:

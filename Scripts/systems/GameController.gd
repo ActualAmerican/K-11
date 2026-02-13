@@ -21,6 +21,7 @@ var _noise_carryover_next_suspect: bool = false
 var _clock: GameClock = null
 var _phone: PhoneSystem = null
 var _alarm_sys: AlarmSystem = null
+var _interbreak_sys: InterBreakSystem = null
 var _alarm_flash: CanvasItem = null
 var _breach_active: bool = false
 var _deadline_total_s: float = 0.0
@@ -34,6 +35,8 @@ var _phone_forced: bool = false
 var _tick_1hz_accum: float = 0.0
 var _clock_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _game_over_active: bool = false
+var _clock_rate_game: float = 1.0
+var _clock_rate_intermission: float = 0.0166667
 var suspect_index: int = 0
 var suspect_seed_value: int = 0
 var suspect_seed_text: String = ""
@@ -57,6 +60,13 @@ var _phone_image: Image = null
 var _phone_image_size: Vector2i = Vector2i.ZERO
 var _phone_outline: Node = null
 var _phone_hover: bool = false
+var _computer_node: Sprite2D = null
+var _computer_base_modulate: Color = Color(1, 1, 1, 1)
+var _computer_image: Image = null
+var _computer_image_size: Vector2i = Vector2i.ZERO
+var _computer_outline: Node = null
+var _computer_hover: bool = false
+var _intermission_active: bool = false
 var _pending_verdict_id: String = ""
 var _verdict_buttons: Array[Button] = []
 var _verdict_committed: bool = false
@@ -94,6 +104,7 @@ var _hud_hotkeys_label: Label
 var _hud_hotkeys_label2: Label
 var _hud_hotkeys_labels: Array[Label] = []
 var _hud_event_log_label: Label
+var _case_drawer_button: Button = null
 var _last_logged_overlay_open: bool = false
 var _last_logged_overlay_id: String = ""
 
@@ -149,8 +160,11 @@ func _ready() -> void:
 	_init_revolver_system()
 	_init_noise_system()
 	_init_alarm_system()
+	_init_interbreak_system()
 	_clock = GameClock.new()
 	_clock.setup(time_policy.ingame_minutes_per_real_second, time_policy.clock_start_minutes)
+	_clock_rate_game = time_policy.ingame_minutes_per_real_second
+	_clock_rate_intermission = 1.0 / 60.0
 	_phone = PhoneSystem.new()
 	_phone.setup(_noise_sys, time_policy)
 	_install_hud()
@@ -160,6 +174,7 @@ func _ready() -> void:
 	_cleanup_duplicate_hud_labels()
 	_cache_camera()
 	_cache_phone()
+	_cache_computer()
 	_cache_alarm_stub()
 	_update_app_state()
 	_apply_state_policy("ready")
@@ -187,6 +202,7 @@ func _process(_delta: float) -> void:
 		while _tick_1hz_accum >= 1.0:
 			_tick_1hz_accum -= 1.0
 			if _clock != null:
+				_clock.minutes_per_real_second = _clock_rate_intermission if _intermission_active else _clock_rate_game
 				_clock.tick(1.0)
 			if _deadline_active and not _deadline_expired and not _breach_active:
 				_deadline_left_s -= 1.0
@@ -216,6 +232,8 @@ func _process(_delta: float) -> void:
 			_cache_case_folder()
 		if _phone_node == null:
 			_cache_phone()
+		if _computer_node == null:
+			_cache_computer()
 		if _camera_node == null:
 			_cache_camera()
 		if _case_folder != null and _camera_node != null:
@@ -231,6 +249,11 @@ func _process(_delta: float) -> void:
 			_phone_hover = phone_active and _is_mouse_over_phone(mouse_world_phone)
 			if _phone_outline is CanvasItem:
 				(_phone_outline as CanvasItem).visible = _phone_hover
+		if _computer_node != null and _camera_node != null:
+			var mouse_world_computer: Vector2 = _camera_node.get_global_mouse_position()
+			_computer_hover = _intermission_active and _is_mouse_over_computer(mouse_world_computer)
+			if _computer_outline is CanvasItem:
+				(_computer_outline as CanvasItem).visible = _computer_hover
 
 func _input(event: InputEvent) -> void:
 	if get_viewport().is_input_handled():
@@ -260,9 +283,20 @@ func _unhandled_input(event: InputEvent) -> void:
 				_cache_case_folder()
 			if _phone_node == null:
 				_cache_phone()
+			if _computer_node == null:
+				_cache_computer()
 			if _camera_node == null:
 				return
 			var mouse_world: Vector2 = _camera_node.get_global_mouse_position()
+			if _intermission_active:
+				if _computer_node != null and _is_mouse_over_computer(mouse_world):
+					open_overlay("REQ_TERMINAL", {"title": "REQUISITION", "body": "Placeholder (9.3)…"})
+					get_viewport().set_input_as_handled()
+					return
+				if _case_folder != null and _is_mouse_over_case_folder(mouse_world):
+					open_overlay("CASE_HANDLING", {"title": "CASE HANDLING", "body": "Placeholder (9.2)…"})
+					get_viewport().set_input_as_handled()
+					return
 			if _is_mouse_over_case_folder(mouse_world):
 				var payload := _build_case_folder_payload()
 				open_overlay(OVERLAY_CASE_FOLDER_ID, payload)
@@ -277,7 +311,10 @@ func _unhandled_input(event: InputEvent) -> void:
 func _handle_dev_hotkeys(event: InputEvent) -> bool:
 	if dev_allow_escape_hatch and event.is_action_pressed("ui_cancel"):
 		if overlay_open:
-			close_overlay()
+			if _interbreak_sys != null and _interbreak_sys.is_active() and overlay_id.begins_with("INTERBREAK_"):
+				_on_interbreak_continue()
+			else:
+				close_overlay()
 			return true
 
 		var mode: int = DisplayServer.window_get_mode()
@@ -711,6 +748,23 @@ func _install_hud() -> void:
 	_hud_event_log_label.add_theme_constant_override("outline_size", 2)
 	_hud_layer.add_child(_hud_event_log_label)
 
+	_case_drawer_button = Button.new()
+	_case_drawer_button.name = &"CaseDrawerButton"
+	_case_drawer_button.text = "File Case"
+	_case_drawer_button.anchor_left = 1.0
+	_case_drawer_button.anchor_top = 1.0
+	_case_drawer_button.anchor_right = 1.0
+	_case_drawer_button.anchor_bottom = 1.0
+	_case_drawer_button.offset_left = -160
+	_case_drawer_button.offset_top = -72
+	_case_drawer_button.offset_right = -16
+	_case_drawer_button.offset_bottom = -32
+	_case_drawer_button.visible = false
+	_case_drawer_button.pressed.connect(func() -> void:
+		_on_case_handling_filed()
+	)
+	_hud_layer.add_child(_case_drawer_button)
+
 func _install_seed_prompt() -> void:
 	if is_instance_valid(_seed_dialog):
 		return
@@ -881,10 +935,45 @@ func _init_alarm_system() -> void:
 	_alarm_sys = AlarmSystem.new()
 	var grace: int = 30
 	if time_policy != null:
-		grace = int(time_policy.breach_grace_s)
+		grace = int(time_policy.noise_breach_kill_delay_s)
 	_alarm_sys.configure(grace)
 	var cb := Callable(self, "_on_alarm_timed_out")
 	_alarm_sys.alarm_timed_out.connect(cb)
+
+func _init_interbreak_system() -> void:
+	if _interbreak_sys == null:
+		_interbreak_sys = preload("res://Scripts/systems/InterBreakSystem.gd").new()
+	_interbreak_sys.setup(self)
+	var cb := Callable(self, "_on_interbreak_finished")
+	if _interbreak_sys.has_signal("finished") and not _interbreak_sys.is_connected("finished", cb):
+		_interbreak_sys.connect("finished", cb)
+
+func _start_interbreak_from_verdict() -> void:
+	if _interbreak_sys == null:
+		_init_interbreak_system()
+	if _interbreak_sys == null:
+		_advance_to_next_suspect()
+		set_run_state(RunState.IDLE)
+		return
+	_log("INTERBREAK: start")
+	_interbreak_sys.start_from_verdict()
+
+func _on_interbreak_continue() -> void:
+	if _interbreak_sys != null and _interbreak_sys.is_active():
+		_log("INTERBREAK: continue")
+		_interbreak_sys.advance()
+
+func _on_interbreak_finished() -> void:
+	_log("INTERBREAK: finished -> next suspect")
+	_advance_to_next_suspect()
+	set_run_state(RunState.IDLE)
+
+func _on_case_handling_filed() -> void:
+	close_overlay()
+	_intermission_active = false
+	_advance_to_next_suspect()
+	set_run_state(RunState.IDLE)
+	_log("INTERMISSION: filed -> next suspect")
 
 func _cache_alarm_stub() -> void:
 	var root := get_tree().current_scene
@@ -1487,6 +1576,64 @@ func _ensure_phone_outline() -> void:
 	outline.visible = false
 	_phone_node.add_child(outline)
 
+func _cache_computer() -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	if _computer_node != null:
+		return
+	var computer_node := root.find_child("Computer", true, false)
+	if computer_node is Sprite2D:
+		_computer_node = computer_node as Sprite2D
+		_computer_base_modulate = _computer_node.modulate
+		if _computer_node.texture != null:
+			_computer_image = _computer_node.texture.get_image()
+			if _computer_image != null:
+				_computer_image_size = _computer_image.get_size()
+		_ensure_computer_outline()
+
+func _is_mouse_over_computer(mouse_world: Vector2) -> bool:
+	if _computer_node == null or _computer_node.texture == null:
+		return false
+	var local: Vector2 = _computer_node.to_local(mouse_world)
+	var size: Vector2 = _computer_node.texture.get_size()
+	var rect := Rect2(Vector2.ZERO, size)
+	if _computer_node.centered:
+		rect.position = -size * 0.5
+	if not rect.has_point(local):
+		return false
+
+	if _computer_image != null and _computer_image_size != Vector2i.ZERO:
+		var tex_pos: Vector2 = local
+		if _computer_node.centered:
+			tex_pos += size * 0.5
+		var ix: int = int(floor(tex_pos.x))
+		var iy: int = int(floor(tex_pos.y))
+		if ix >= 0 and iy >= 0 and ix < _computer_image_size.x and iy < _computer_image_size.y:
+			var a: float = _computer_image.get_pixel(ix, iy).a
+			return a > 0.1
+
+	return true
+
+func _ensure_computer_outline() -> void:
+	if _computer_node == null:
+		return
+	if _computer_outline != null:
+		return
+	if _computer_node.texture == null:
+		return
+
+	var outline: Sprite2D = preload("res://Scripts/ui/AlphaOutline.gd").new() as Sprite2D
+	_computer_outline = outline
+	if outline == null:
+		return
+	outline.name = "ComputerHoverOutline"
+	outline.texture = _computer_node.texture
+	outline.centered = _computer_node.centered
+	outline.z_index = _computer_node.z_index + 1
+	outline.visible = false
+	_computer_node.add_child(outline)
+
 func _build_case_folder_payload() -> Dictionary:
 	if current_suspect == null:
 		return {
@@ -1565,6 +1712,8 @@ func _set_dev_hud_visible(visible: bool) -> void:
 			lbl.visible = visible
 	if is_instance_valid(_hud_event_log_label):
 		_hud_event_log_label.visible = visible
+	if is_instance_valid(_case_drawer_button):
+		_case_drawer_button.visible = visible and _intermission_active and not overlay_open
 
 	var root: Node = get_tree().root
 	if root == null:
@@ -1666,8 +1815,8 @@ func _on_verdict_overlay_continued() -> void:
 		_log("OUTCOME: FAIL (wrong verdict) verdict=%s truth=%s" % [_last_verdict, "GUILTY" if _last_truth_guilty else "INNOCENT"])
 		set_run_state(RunState.OUTCOME)
 	_pending_run_fail = false
-	_advance_to_next_suspect()
-	set_run_state(RunState.IDLE)
+	_intermission_active = true
+	_log("INTERMISSION: start (computer optional; file case to proceed)")
 
 func _advance_to_next_suspect() -> void:
 	suspect_index += 1
@@ -1711,6 +1860,9 @@ func _update_hud() -> void:
 		if _camera_node.has_method("is_edge_pan_enabled"):
 			edge_pan_text = "ON" if _camera_node.call("is_edge_pan_enabled") else "OFF"
 	var camera_line: String = "CAMERA: %s edge_pan=%s" % [camera_text, edge_pan_text]
+
+	if is_instance_valid(_case_drawer_button):
+		_case_drawer_button.visible = dev_hud_enabled and _intermission_active and not overlay_open
 	var danger_fill: int = 0
 	var full_list: Array[String] = []
 	var empty_list: Array[String] = []
@@ -2148,6 +2300,7 @@ func _reset_run_state() -> void:
 	_deadline_stage_durations.clear()
 	_phone_forced = false
 	_tick_1hz_accum = 0.0
+	_intermission_active = false
 	suspect_index = 0
 	_refresh_suspect_seed()
 	if _revolver_sys != null:

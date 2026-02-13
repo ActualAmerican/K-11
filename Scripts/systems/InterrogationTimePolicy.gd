@@ -10,6 +10,8 @@ class_name InterrogationTimePolicy
 @export var clock_start_minutes: int = 540
 @export var clock_gap_min_minutes: int = 60
 @export var clock_gap_max_minutes: int = 240
+@export var noise_breach_kill_delay_s: float = 30.0
+@export var noise_breach_game_over_overlay_id: String = "GAME_OVER"
 @export var breach_grace_s: int = 30
 @export var breach_resolve_drop_to: int = 80
 
