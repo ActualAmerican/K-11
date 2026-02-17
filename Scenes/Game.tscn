@@ -1,4 +1,4 @@
-[gd_scene load_steps=28 format=3 uid="uid://skkut8fchrar"]
+[gd_scene load_steps=29 format=3 uid="uid://skkut8fchrar"]
 
 [ext_resource type="Texture2D" uid="uid://dvx87r175v28j" path="res://Assets/Image Assets/Wall.PNG" id="1_iukft"]
 [ext_resource type="Texture2D" uid="uid://bip8s6yw33qga" path="res://Assets/Image Assets/Desk.PNG" id="2_gl6un"]
@@ -24,6 +24,7 @@
 [ext_resource type="Texture2D" uid="uid://coe60tqemvxlo" path="res://Assets/Image Assets/image0.png" id="21_vvhu1"]
 [ext_resource type="Script" uid="uid://cbg4cbgxq4aoh" path="res://Scripts/ui/TabBar.gd" id="22_tabbar"]
 [ext_resource type="Script" uid="uid://ydpd2xq4cb52" path="res://Scripts/ui/EvidenceLogPanel.gd" id="23_evidence_log"]
+[ext_resource type="Texture2D" uid="uid://cggk4h074ca8r" path="res://Assets/Image Assets/IMG_0984.PNG" id="24_3jf1l"]
 [ext_resource type="PackedScene" path="res://Scenes/RevolverWidget.tscn" id="24_revolver_widget"]
 [ext_resource type="Script" uid="uid://ciumxpifprwdc" path="res://Scripts/ui/NoiseMeterWidget.gd" id="25_noise_meter_widget"]
 
@@ -128,6 +129,9 @@ chamber_ring_radius_px = 225.0
 
 [node name="Phone" type="Sprite2D" parent="."]
 texture = ExtResource("21_vvhu1")
+
+[node name="CaseDrawer" type="Sprite2D" parent="."]
+texture = ExtResource("24_3jf1l")
 
 [node name="AlarmStub" type="CanvasLayer" parent="."]
 layer = 150

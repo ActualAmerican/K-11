@@ -66,6 +66,12 @@ var _computer_image: Image = null
 var _computer_image_size: Vector2i = Vector2i.ZERO
 var _computer_outline: Node = null
 var _computer_hover: bool = false
+var _case_drawer_node: Sprite2D = null
+var _case_drawer_base_modulate: Color = Color(1, 1, 1, 1)
+var _case_drawer_image: Image = null
+var _case_drawer_image_size: Vector2i = Vector2i.ZERO
+var _case_drawer_outline: Node = null
+var _case_drawer_hover: bool = false
 var _intermission_active: bool = false
 var _pending_verdict_id: String = ""
 var _verdict_buttons: Array[Button] = []
@@ -104,7 +110,6 @@ var _hud_hotkeys_label: Label
 var _hud_hotkeys_label2: Label
 var _hud_hotkeys_labels: Array[Label] = []
 var _hud_event_log_label: Label
-var _case_drawer_button: Button = null
 var _last_logged_overlay_open: bool = false
 var _last_logged_overlay_id: String = ""
 
@@ -234,6 +239,8 @@ func _process(_delta: float) -> void:
 			_cache_phone()
 		if _computer_node == null:
 			_cache_computer()
+		if _case_drawer_node == null:
+			_cache_case_drawer()
 		if _camera_node == null:
 			_cache_camera()
 		if _case_folder != null and _camera_node != null:
@@ -254,6 +261,11 @@ func _process(_delta: float) -> void:
 			_computer_hover = _intermission_active and _is_mouse_over_computer(mouse_world_computer)
 			if _computer_outline is CanvasItem:
 				(_computer_outline as CanvasItem).visible = _computer_hover
+		if _case_drawer_node != null and _camera_node != null:
+			var mouse_world_case_drawer: Vector2 = _camera_node.get_global_mouse_position()
+			_case_drawer_hover = _intermission_active and _is_mouse_over_case_drawer(mouse_world_case_drawer)
+			if _case_drawer_outline is CanvasItem:
+				(_case_drawer_outline as CanvasItem).visible = _case_drawer_hover
 
 func _input(event: InputEvent) -> void:
 	if get_viewport().is_input_handled():
@@ -285,16 +297,18 @@ func _unhandled_input(event: InputEvent) -> void:
 				_cache_phone()
 			if _computer_node == null:
 				_cache_computer()
+			if _case_drawer_node == null:
+				_cache_case_drawer()
 			if _camera_node == null:
 				return
 			var mouse_world: Vector2 = _camera_node.get_global_mouse_position()
 			if _intermission_active:
 				if _computer_node != null and _is_mouse_over_computer(mouse_world):
-					open_overlay("REQ_TERMINAL", {"title": "REQUISITION", "body": "Placeholder (9.3)…"})
+					open_overlay("REQ_TERMINAL", {"title": "REQUISITION", "body": "Placeholder (9.3)..."})
 					get_viewport().set_input_as_handled()
 					return
-				if _case_folder != null and _is_mouse_over_case_folder(mouse_world):
-					open_overlay("CASE_HANDLING", {"title": "CASE HANDLING", "body": "Placeholder (9.2)…"})
+				if _case_drawer_node != null and _is_mouse_over_case_drawer(mouse_world):
+					open_overlay("CASE_HANDLING", {"title": "CASE HANDLING", "body": "Placeholder (9.2)..."})
 					get_viewport().set_input_as_handled()
 					return
 			if _is_mouse_over_case_folder(mouse_world):
@@ -747,23 +761,6 @@ func _install_hud() -> void:
 	_hud_event_log_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 1))
 	_hud_event_log_label.add_theme_constant_override("outline_size", 2)
 	_hud_layer.add_child(_hud_event_log_label)
-
-	_case_drawer_button = Button.new()
-	_case_drawer_button.name = &"CaseDrawerButton"
-	_case_drawer_button.text = "File Case"
-	_case_drawer_button.anchor_left = 1.0
-	_case_drawer_button.anchor_top = 1.0
-	_case_drawer_button.anchor_right = 1.0
-	_case_drawer_button.anchor_bottom = 1.0
-	_case_drawer_button.offset_left = -160
-	_case_drawer_button.offset_top = -72
-	_case_drawer_button.offset_right = -16
-	_case_drawer_button.offset_bottom = -32
-	_case_drawer_button.visible = false
-	_case_drawer_button.pressed.connect(func() -> void:
-		_on_case_handling_filed()
-	)
-	_hud_layer.add_child(_case_drawer_button)
 
 func _install_seed_prompt() -> void:
 	if is_instance_valid(_seed_dialog):
@@ -1310,6 +1307,7 @@ func _apply_noise_trigger(id: StringName, meta: Dictionary = {}) -> void:
 		_noise_sys.call("apply_trigger", id, meta)
 
 func apply_case_handling_failure(meta: Dictionary = {}) -> void:
+	_noise_carryover_next_suspect = true
 	_apply_noise_trigger(&"case_handling_failure", meta)
 
 func _trigger_overflow_discharge(reason: String) -> void:
@@ -1634,6 +1632,62 @@ func _ensure_computer_outline() -> void:
 	outline.visible = false
 	_computer_node.add_child(outline)
 
+func _cache_case_drawer() -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	if _case_drawer_node != null:
+		return
+	var drawer_node: Node = root.find_child("CaseDrawer", true, false)
+	if drawer_node is Sprite2D:
+		_case_drawer_node = drawer_node as Sprite2D
+		_case_drawer_base_modulate = _case_drawer_node.modulate
+		if _case_drawer_node.texture != null:
+			_case_drawer_image = _case_drawer_node.texture.get_image()
+			if _case_drawer_image != null:
+				_case_drawer_image_size = _case_drawer_image.get_size()
+		_ensure_case_drawer_outline()
+
+func _is_mouse_over_case_drawer(mouse_world: Vector2) -> bool:
+	if _case_drawer_node == null or _case_drawer_node.texture == null:
+		return false
+	var local: Vector2 = _case_drawer_node.to_local(mouse_world)
+	var size: Vector2 = _case_drawer_node.texture.get_size()
+	var rect: Rect2 = Rect2(Vector2.ZERO, size)
+	if _case_drawer_node.centered:
+		rect.position = -size * 0.5
+	if not rect.has_point(local):
+		return false
+
+	if _case_drawer_image != null and _case_drawer_image_size != Vector2i.ZERO:
+		var tex_pos: Vector2 = local
+		if _case_drawer_node.centered:
+			tex_pos += size * 0.5
+		var ix: int = int(floor(tex_pos.x))
+		var iy: int = int(floor(tex_pos.y))
+		if ix >= 0 and iy >= 0 and ix < _case_drawer_image_size.x and iy < _case_drawer_image_size.y:
+			var a: float = _case_drawer_image.get_pixel(ix, iy).a
+			return a > 0.1
+	return true
+
+func _ensure_case_drawer_outline() -> void:
+	if _case_drawer_node == null:
+		return
+	if _case_drawer_outline != null:
+		return
+	if _case_drawer_node.texture == null:
+		return
+	var outline: Sprite2D = preload("res://Scripts/ui/AlphaOutline.gd").new() as Sprite2D
+	_case_drawer_outline = outline
+	if outline == null:
+		return
+	outline.name = "CaseDrawerHoverOutline"
+	outline.texture = _case_drawer_node.texture
+	outline.centered = _case_drawer_node.centered
+	outline.z_index = _case_drawer_node.z_index + 1
+	outline.visible = false
+	_case_drawer_node.add_child(outline)
+
 func _build_case_folder_payload() -> Dictionary:
 	if current_suspect == null:
 		return {
@@ -1712,9 +1766,6 @@ func _set_dev_hud_visible(visible: bool) -> void:
 			lbl.visible = visible
 	if is_instance_valid(_hud_event_log_label):
 		_hud_event_log_label.visible = visible
-	if is_instance_valid(_case_drawer_button):
-		_case_drawer_button.visible = visible and _intermission_active and not overlay_open
-
 	var root: Node = get_tree().root
 	if root == null:
 		return
@@ -1861,8 +1912,6 @@ func _update_hud() -> void:
 			edge_pan_text = "ON" if _camera_node.call("is_edge_pan_enabled") else "OFF"
 	var camera_line: String = "CAMERA: %s edge_pan=%s" % [camera_text, edge_pan_text]
 
-	if is_instance_valid(_case_drawer_button):
-		_case_drawer_button.visible = dev_hud_enabled and _intermission_active and not overlay_open
 	var danger_fill: int = 0
 	var full_list: Array[String] = []
 	var empty_list: Array[String] = []

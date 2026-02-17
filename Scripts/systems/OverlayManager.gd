@@ -229,57 +229,57 @@ func open(id: String, payload: Dictionary = {}) -> void:
 				controller.call("close_overlay")
 		)
 	if id == "CASE_HANDLING":
-		var dimmer := ColorRect.new()
-		dimmer.anchor_left = 0.0
-		dimmer.anchor_top = 0.0
-		dimmer.anchor_right = 1.0
-		dimmer.anchor_bottom = 1.0
-		dimmer.offset_left = 0.0
-		dimmer.offset_top = 0.0
-		dimmer.offset_right = 0.0
-		dimmer.offset_bottom = 0.0
-		dimmer.color = Color(0, 0, 0, 0.45)
-		dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
-		root.add_child(dimmer)
-
-		var box := PanelContainer.new()
-		box.anchor_left = 0.35
-		box.anchor_top = 0.35
-		box.anchor_right = 0.65
-		box.anchor_bottom = 0.65
-		box.offset_left = 0.0
-		box.offset_top = 0.0
-		box.offset_right = 0.0
-		box.offset_bottom = 0.0
-		root.add_child(box)
-
-		var vbox := VBoxContainer.new()
-		vbox.anchor_left = 0.0
-		vbox.anchor_top = 0.0
-		vbox.anchor_right = 1.0
-		vbox.anchor_bottom = 1.0
-		vbox.offset_left = 16
-		vbox.offset_top = 16
-		vbox.offset_right = -16
-		vbox.offset_bottom = -16
-		vbox.add_theme_constant_override("separation", 8)
-		box.add_child(vbox)
-
-		var title := Label.new()
-		title.text = String(payload.get("title", "CASE HANDLING"))
-		vbox.add_child(title)
-
-		var info := Label.new()
-		info.text = String(payload.get("body", ""))
-		vbox.add_child(info)
-
-		var btn := Button.new()
-		btn.text = "File Case"
-		vbox.add_child(btn)
-		btn.pressed.connect(func() -> void:
-			if controller != null and controller.has_method("_on_case_handling_filed"):
-				controller.call("_on_case_handling_filed")
-		)
+		panel.visible = false
+		var bg_block: ColorRect = ColorRect.new()
+		bg_block.anchor_left = 0.0
+		bg_block.anchor_top = 0.0
+		bg_block.anchor_right = 1.0
+		bg_block.anchor_bottom = 1.0
+		bg_block.offset_left = 0.0
+		bg_block.offset_top = 0.0
+		bg_block.offset_right = 0.0
+		bg_block.offset_bottom = 0.0
+		bg_block.color = Color(0, 0, 0, 1)
+		bg_block.mouse_filter = Control.MOUSE_FILTER_STOP
+		root.add_child(bg_block)
+		var scene: PackedScene = preload("res://Scenes/CaseHandlingOverlay.tscn")
+		var inst: Node = scene.instantiate()
+		if inst != null:
+			if inst is Control:
+				var inst_ctrl: Control = inst
+				inst_ctrl.anchor_left = 0.0
+				inst_ctrl.anchor_top = 0.0
+				inst_ctrl.anchor_right = 1.0
+				inst_ctrl.anchor_bottom = 1.0
+				inst_ctrl.offset_left = 0.0
+				inst_ctrl.offset_top = 0.0
+				inst_ctrl.offset_right = 0.0
+				inst_ctrl.offset_bottom = 0.0
+			root.add_child(inst)
+			if inst.has_signal("finished"):
+				inst.connect("finished", func(success: bool, noise_points: int) -> void:
+					var cb_finished_v: Variant = payload.get("on_finished", null)
+					if cb_finished_v is Callable:
+						var cb_finished: Callable = cb_finished_v
+						if cb_finished.is_valid():
+							cb_finished.call(success, noise_points)
+					else:
+						var cb_done_v: Variant = payload.get("on_done", null)
+						if cb_done_v is Callable:
+							var cb_done: Callable = cb_done_v
+							if cb_done.is_valid():
+								cb_done.call(noise_points)
+					close()
+				)
+			if inst.has_signal("cancelled"):
+				inst.connect("cancelled", func() -> void:
+					var cb_cancel_v: Variant = payload.get("on_cancel", null)
+					if cb_cancel_v is Callable:
+						var cb_cancel: Callable = cb_cancel_v
+						if cb_cancel.is_valid():
+							cb_cancel.call()
+					close()
+				)
 	if id == "CASE_FOLDER":
 		var dimmer := ColorRect.new()
 		dimmer.anchor_left = 0.0
