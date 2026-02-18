@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3 uid="uid://b22vxaylrg4kf"]
+[gd_scene load_steps=10 format=3 uid="uid://b22vxaylrg4kf"]
 
 [ext_resource type="Script" uid="uid://cguesh25wv16f" path="res://Scripts/ui/CaseHandlingOverlay.gd" id="1"]
 [ext_resource type="Texture2D" uid="uid://b16guxdvdv7jw" path="res://Assets/Image Assets/IMG_0988.PNG" id="2_bg"]
@@ -6,6 +6,20 @@
 [ext_resource type="Texture2D" uid="uid://tanwpingn3tv" path="res://Assets/Image Assets/IMG_0989.PNG" id="3_dhoku"]
 [ext_resource type="Texture2D" uid="uid://d2cf7beqca5tl" path="res://Assets/Image Assets/IMG_0986.PNG" id="4_table_top"]
 [ext_resource type="Texture2D" uid="uid://d16ulcx5boqpu" path="res://Assets/Image Assets/IMG_0987.PNG" id="5_case_file"]
+[ext_resource type="Script" uid="uid://7y8uownd3eoc" path="res://Scripts/ui/DrawerDropZoneIndicator.gd" id="6_drop_zone"]
+[ext_resource type="Script" uid="uid://cdnxsp0fy2q5j" path="res://Scripts/ui/DrawerBalanceGauge.gd" id="8"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_mqjvh"]
+bg_color = Color(0.2, 1, 0.2, 0.08)
+border_width_left = 3
+border_width_top = 3
+border_width_right = 3
+border_width_bottom = 3
+border_color = Color(0.2, 1, 0.2, 1)
+corner_radius_top_left = 14
+corner_radius_top_right = 14
+corner_radius_bottom_right = 14
+corner_radius_bottom_left = 14
 
 [node name="CaseHandlingOverlay" type="Control"]
 layout_mode = 3
@@ -16,6 +30,14 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1")
+balance_yellow_threshold = null
+balance_orange_threshold = null
+balance_red_threshold = null
+balance_jam_noise_rate = null
+balance_red_slam_noise_bonus = null
+balance_green_open_speed = null
+balance_yellow_open_speed = null
+balance_red_grip_loss_delay_s = null
 
 [node name="Background" type="Sprite2D" parent="."]
 texture = ExtResource("5_case_file")
@@ -33,42 +55,37 @@ texture = ExtResource("2_bg")
 visible = false
 texture = ExtResource("4_table_top")
 
-[node name="StatusLabel" type="Label" parent="."]
+[node name="DropZoneIndicator" type="Panel" parent="."]
 layout_mode = 0
+offset_left = -397.055
+offset_top = -1046.3201
+offset_right = -60.475006
+offset_bottom = -588.0901
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_mqjvh")
+script = ExtResource("6_drop_zone")
+design_rect_px = Rect2(882.945, 328.68, 336.58, 458.23)
+
+[node name="BalanceGauge" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 7
 anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -520.0
-offset_top = 62.0
-offset_right = 520.0
-offset_bottom = 92.0
-text = "Drag drawer down to open."
-horizontal_alignment = 1
-
-[node name="NoiseLabel" type="Label" parent="."]
-layout_mode = 0
-anchor_right = 1.0
-offset_left = 20.0
-offset_top = 20.0
-offset_right = 300.0
-offset_bottom = 50.0
-text = "NOISE:"
-
-[node name="CancelButton" type="Button" parent="."]
-layout_mode = 0
-anchor_bottom = 1.0
-offset_left = 20.0
-offset_top = -70.0
-offset_right = 160.0
-offset_bottom = -30.0
-text = "Cancel"
-
-[node name="DoneButton" type="Button" parent="."]
-layout_mode = 0
-anchor_left = 0.5
+anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -110.0
-offset_top = -70.0
-offset_right = 110.0
-offset_bottom = -30.0
-text = "File Case"
+offset_left = -1269.35
+offset_top = -1459.03
+offset_right = -789.35
+offset_bottom = -1305.4
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("8")
+design_rect_px = Rect2(970.65, 995.97, 480, 153.63)
+yellow_threshold = null
+orange_threshold = null
+red_threshold = null
+color_green = null
+color_yellow = null
+color_orange = null
+color_red = null

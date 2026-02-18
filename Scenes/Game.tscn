@@ -1,4 +1,4 @@
-[gd_scene load_steps=29 format=3 uid="uid://skkut8fchrar"]
+[gd_scene load_steps=31 format=3 uid="uid://skkut8fchrar"]
 
 [ext_resource type="Texture2D" uid="uid://dvx87r175v28j" path="res://Assets/Image Assets/Wall.PNG" id="1_iukft"]
 [ext_resource type="Texture2D" uid="uid://bip8s6yw33qga" path="res://Assets/Image Assets/Desk.PNG" id="2_gl6un"]
@@ -15,15 +15,17 @@
 [ext_resource type="Texture2D" uid="uid://bnnkaalrvavs2" path="res://Assets/Image Assets/IMG_0971.PNG" id="13_8e0uq"]
 [ext_resource type="Texture2D" uid="uid://d24imrecm3po4" path="res://Assets/Image Assets/IMG_0972.PNG" id="14_i0vto"]
 [ext_resource type="Texture2D" uid="uid://bpcmjeba0fay3" path="res://Assets/Image Assets/IMG_0973.PNG" id="15_3jf1l"]
-[ext_resource type="Texture2D" uid="uid://bp7kwsjyv08yp" path="res://Assets/Image Assets/IMG_0979.PNG" id="17_3jf1l"]
+[ext_resource type="Texture2D" uid="uid://bqk7y48khpk6l" path="res://Assets/Image Assets/IMG_1002.png" id="17_3jf1l"]
 [ext_resource type="Texture2D" uid="uid://ci5jutaxmh6y1" path="res://Assets/Image Assets/IMG_0976.PNG" id="17_356ba"]
 [ext_resource type="Texture2D" uid="uid://bhqesrx1ltejp" path="res://Assets/Image Assets/IMG_0975.PNG" id="18_i4lct"]
 [ext_resource type="Texture2D" uid="uid://bn6nrwf3ml6em" path="res://Assets/Image Assets/IMG_0977.PNG" id="19_iyesh"]
 [ext_resource type="Script" uid="uid://43jbfsjc12lj" path="res://Scripts/systems/Camera.gd" id="20_i1pr2"]
 [ext_resource type="Texture2D" uid="uid://dxiuk1bsyglk3" path="res://Assets/Image Assets/IMG_0930.PNG" id="20_rajel"]
 [ext_resource type="Texture2D" uid="uid://coe60tqemvxlo" path="res://Assets/Image Assets/image0.png" id="21_vvhu1"]
+[ext_resource type="Texture2D" uid="uid://b51fdvwtngu5c" path="res://Assets/Image Assets/IMG_1003.png" id="22_i4lct"]
 [ext_resource type="Script" uid="uid://cbg4cbgxq4aoh" path="res://Scripts/ui/TabBar.gd" id="22_tabbar"]
 [ext_resource type="Script" uid="uid://ydpd2xq4cb52" path="res://Scripts/ui/EvidenceLogPanel.gd" id="23_evidence_log"]
+[ext_resource type="Texture2D" uid="uid://cg1kf71hxrf7x" path="res://Assets/Image Assets/IMG_1001.png" id="23_iyesh"]
 [ext_resource type="Texture2D" uid="uid://cggk4h074ca8r" path="res://Assets/Image Assets/IMG_0984.PNG" id="24_3jf1l"]
 [ext_resource type="PackedScene" path="res://Scenes/RevolverWidget.tscn" id="24_revolver_widget"]
 [ext_resource type="Script" uid="uid://ciumxpifprwdc" path="res://Scripts/ui/NoiseMeterWidget.gd" id="25_noise_meter_widget"]
@@ -62,13 +64,11 @@ visible = false
 light_mask = 14
 texture = ExtResource("8_tfod6")
 
-[node name="Alarm" type="Sprite2D" parent="."]
-texture = ExtResource("9_rajel")
-
 [node name="Clock" type="Sprite2D" parent="."]
 texture = ExtResource("10_vvhu1")
 
 [node name="Folder" type="Sprite2D" parent="."]
+position = Vector2(94, 0)
 texture = ExtResource("11_lbihj")
 
 [node name="Danger" type="Sprite2D" parent="."]
@@ -127,11 +127,23 @@ backing_radius_px = 180.0
 chamber_radius_px = 90.0
 chamber_ring_radius_px = 225.0
 
+[node name="AshTray" type="Sprite2D" parent="."]
+position = Vector2(18, -2)
+texture = ExtResource("22_i4lct")
+
+[node name="Intercom" type="Sprite2D" parent="."]
+position = Vector2(-39, 5)
+texture = ExtResource("23_iyesh")
+
 [node name="Phone" type="Sprite2D" parent="."]
+position = Vector2(-193, 2)
 texture = ExtResource("21_vvhu1")
 
 [node name="CaseDrawer" type="Sprite2D" parent="."]
 texture = ExtResource("24_3jf1l")
+
+[node name="Alarm" type="Sprite2D" parent="."]
+texture = ExtResource("9_rajel")
 
 [node name="AlarmStub" type="CanvasLayer" parent="."]
 layer = 150

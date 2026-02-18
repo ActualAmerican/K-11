@@ -151,6 +151,15 @@ var _last_force_verdict_event_id: int = 0
 var _seed_prompt_prev_hud_visible: bool = false
 var _pending_seed_reload: bool = false
 var _pending_seed_text: String = ""
+var _case_transition_layer: CanvasLayer = null
+var _case_transition_rect: ColorRect = null
+var _case_transition_busy: bool = false
+
+@export var case_handling_black_hold_s: float = 0.22
+@export var case_handling_fade_in_s: float = 0.55
+@export var case_handling_open_fade_out_s: float = 0.28
+@export var case_handling_open_black_hold_s: float = 0.08
+@export var case_handling_open_fade_in_s: float = 0.32
 
 func _ready() -> void:
 	_overlay_manager = preload("res://Scripts/systems/OverlayManager.gd").new()
@@ -281,6 +290,8 @@ func _unhandled_input(event: InputEvent) -> void:
 	if _handle_dev_hotkeys(event):
 		get_viewport().set_input_as_handled()
 		return
+	if _case_transition_busy:
+		return
 
 	if app_state != AppState.GAME:
 		return
@@ -308,7 +319,7 @@ func _unhandled_input(event: InputEvent) -> void:
 					get_viewport().set_input_as_handled()
 					return
 				if _case_drawer_node != null and _is_mouse_over_case_drawer(mouse_world):
-					open_overlay("CASE_HANDLING", {"title": "CASE HANDLING", "body": "Placeholder (9.2)..."})
+					_open_case_handling_overlay_with_transition()
 					get_viewport().set_input_as_handled()
 					return
 			if _is_mouse_over_case_folder(mouse_world):
@@ -965,12 +976,84 @@ func _on_interbreak_finished() -> void:
 	_advance_to_next_suspect()
 	set_run_state(RunState.IDLE)
 
-func _on_case_handling_filed() -> void:
+func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> void:
+	_show_case_transition_black()
 	close_overlay()
 	_intermission_active = false
 	_advance_to_next_suspect()
 	set_run_state(RunState.IDLE)
 	_log("INTERMISSION: filed -> next suspect")
+	await _fade_in_case_transition()
+
+func _open_case_handling_overlay_with_transition() -> void:
+	if _case_transition_busy:
+		return
+	_case_transition_busy = true
+	await _fade_to_case_transition_black(case_handling_open_fade_out_s, case_handling_open_black_hold_s)
+	open_overlay("CASE_HANDLING", {"title": "CASE HANDLING", "body": "Placeholder (9.2)...", "on_finished": Callable(self, "_on_case_handling_filed")})
+	await _fade_from_case_transition(case_handling_open_fade_in_s)
+	_case_transition_busy = false
+
+func _ensure_case_transition_overlay() -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	if is_instance_valid(_case_transition_layer) and _case_transition_layer.get_parent() == root:
+		return
+	if is_instance_valid(_case_transition_layer):
+		_case_transition_layer.queue_free()
+	_case_transition_layer = CanvasLayer.new()
+	_case_transition_layer.name = &"CaseTransitionLayer"
+	_case_transition_layer.layer = 250
+	root.add_child(_case_transition_layer)
+
+	_case_transition_rect = ColorRect.new()
+	_case_transition_rect.name = &"CaseTransitionRect"
+	_case_transition_rect.anchor_left = 0.0
+	_case_transition_rect.anchor_top = 0.0
+	_case_transition_rect.anchor_right = 1.0
+	_case_transition_rect.anchor_bottom = 1.0
+	_case_transition_rect.offset_left = 0.0
+	_case_transition_rect.offset_top = 0.0
+	_case_transition_rect.offset_right = 0.0
+	_case_transition_rect.offset_bottom = 0.0
+	_case_transition_rect.color = Color(0, 0, 0, 1)
+	_case_transition_rect.modulate = Color(1, 1, 1, 0)
+	_case_transition_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_case_transition_layer.add_child(_case_transition_rect)
+
+func _show_case_transition_black() -> void:
+	_ensure_case_transition_overlay()
+	if _case_transition_rect == null:
+		return
+	_case_transition_rect.visible = true
+	_case_transition_rect.modulate.a = 1.0
+
+func _fade_in_case_transition() -> void:
+	await _fade_from_case_transition(case_handling_fade_in_s, case_handling_black_hold_s)
+
+func _fade_to_case_transition_black(duration_s: float, hold_s: float = 0.0) -> void:
+	_ensure_case_transition_overlay()
+	if _case_transition_rect == null:
+		return
+	_case_transition_rect.visible = true
+	var tween: Tween = create_tween()
+	tween.tween_property(_case_transition_rect, "modulate:a", 1.0, maxf(0.01, duration_s)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	await tween.finished
+	if hold_s > 0.0:
+		await get_tree().create_timer(hold_s).timeout
+
+func _fade_from_case_transition(duration_s: float, hold_s: float = 0.0) -> void:
+	_ensure_case_transition_overlay()
+	if _case_transition_rect == null:
+		return
+	_case_transition_rect.visible = true
+	if hold_s > 0.0:
+		await get_tree().create_timer(hold_s).timeout
+	var tween: Tween = create_tween()
+	tween.tween_property(_case_transition_rect, "modulate:a", 0.0, maxf(0.01, duration_s)).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	await tween.finished
+	_case_transition_rect.visible = false
 
 func _cache_alarm_stub() -> void:
 	var root := get_tree().current_scene
