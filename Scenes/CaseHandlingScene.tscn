@@ -1,6 +1,6 @@
-[gd_scene load_steps=10 format=3 uid="uid://b22vxaylrg4kf"]
+[gd_scene load_steps=11 format=3 uid="uid://cwc38u2xlxfib"]
 
-[ext_resource type="Script" uid="uid://cguesh25wv16f" path="res://Scripts/ui/CaseHandlingOverlay.gd" id="1"]
+[ext_resource type="Script" uid="uid://bd5dbg5t13a3f" path="res://Scripts/ui/CaseHandlingScene.gd" id="1"]
 [ext_resource type="Texture2D" uid="uid://b16guxdvdv7jw" path="res://Assets/Image Assets/IMG_0988.PNG" id="2_bg"]
 [ext_resource type="Script" uid="uid://m321y3iloeml" path="res://Scripts/ui/DrawerTrackConfig.gd" id="2_track"]
 [ext_resource type="Texture2D" uid="uid://tanwpingn3tv" path="res://Assets/Image Assets/IMG_0989.PNG" id="3_dhoku"]
@@ -9,7 +9,7 @@
 [ext_resource type="Script" uid="uid://7y8uownd3eoc" path="res://Scripts/ui/DrawerDropZoneIndicator.gd" id="6_drop_zone"]
 [ext_resource type="Script" uid="uid://cdnxsp0fy2q5j" path="res://Scripts/ui/DrawerBalanceGauge.gd" id="8"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_mqjvh"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_jylbd"]
 bg_color = Color(0.2, 1, 0.2, 0.08)
 border_width_left = 3
 border_width_top = 3
@@ -21,7 +21,19 @@ corner_radius_top_right = 14
 corner_radius_bottom_right = 14
 corner_radius_bottom_left = 14
 
-[node name="CaseHandlingOverlay" type="Control"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_noise_pip"]
+bg_color = Color(0, 0, 0, 0.18)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(1, 1, 1, 0.2)
+corner_radius_top_left = 6
+corner_radius_top_right = 6
+corner_radius_bottom_right = 6
+corner_radius_bottom_left = 6
+
+[node name="CaseHandlingScene" type="Control"]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -30,14 +42,9 @@ grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 script = ExtResource("1")
-balance_yellow_threshold = null
-balance_orange_threshold = null
-balance_red_threshold = null
-balance_jam_noise_rate = null
-balance_red_slam_noise_bonus = null
-balance_green_open_speed = null
-balance_yellow_open_speed = null
-balance_red_grip_loss_delay_s = null
+pip_source_center_px = Vector2(234.82, 260)
+pip_source_follow_offset_px = Vector2(-0.08666992, -26.90857)
+pip_editor_preview_enabled = false
 
 [node name="Background" type="Sprite2D" parent="."]
 texture = ExtResource("5_case_file")
@@ -62,7 +69,7 @@ offset_top = -1046.3201
 offset_right = -60.475006
 offset_bottom = -588.0901
 mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_mqjvh")
+theme_override_styles/panel = SubResource("StyleBoxFlat_jylbd")
 script = ExtResource("6_drop_zone")
 design_rect_px = Rect2(882.945, 328.68, 336.58, 458.23)
 
@@ -82,10 +89,36 @@ grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("8")
 design_rect_px = Rect2(970.65, 995.97, 480, 153.63)
-yellow_threshold = null
-orange_threshold = null
-red_threshold = null
-color_green = null
-color_yellow = null
-color_orange = null
-color_red = null
+
+[node name="NoiseMeterPiP" type="Control" parent="."]
+clip_contents = true
+anchors_preset = 0
+offset_left = 24.0
+offset_top = 62.0
+offset_right = 584.0
+offset_bottom = 442.0
+mouse_filter = 2
+
+[node name="Frame" type="Panel" parent="NoiseMeterPiP"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_noise_pip")
+
+[node name="PipViewport" type="SubViewport" parent="NoiseMeterPiP"]
+disable_3d = true
+transparent_bg = true
+handle_input_locally = false
+size = Vector2i(420, 280)
+render_target_update_mode = 0
+
+[node name="PipSnapshot" type="Sprite2D" parent="NoiseMeterPiP"]
+z_index = 18
+texture_filter = 2
+position = Vector2(280, 190)
+scale = Vector2(2.1875, 2.1875)
+region_rect = Rect2(0, 0, 420, 280)

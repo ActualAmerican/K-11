@@ -32,7 +32,7 @@ class_name InterrogationTimePolicy
 
 func get_deadline_s(suspect_index: int) -> int:
 	var size := maxi(tier_size, 1)
-	var tier_idx := int(suspect_index / size)
+	var tier_idx := int(float(suspect_index) / float(size))
 	var v: int = min_deadline_s
 	if tier_idx >= 0 and tier_idx < tier_deadlines_s.size():
 		v = int(tier_deadlines_s[tier_idx])

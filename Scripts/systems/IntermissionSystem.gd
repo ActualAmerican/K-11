@@ -1,5 +1,5 @@
 extends RefCounted
-class_name InterBreakSystem
+class_name IntermissionSystem
 
 signal finished
 
@@ -51,15 +51,15 @@ func _open_step() -> void:
 
 	match _step:
 		Step.CASE_WRAP:
-			id = "INTERBREAK_CASE"
+			id = "INTERMISSION_CASE"
 			title = "CASE HANDLING"
 			body = "Placeholder (9.2). File the case and apply consequences."
 		Step.REQUISITION:
-			id = "INTERBREAK_REQ"
+			id = "INTERMISSION_REQ"
 			title = "REQUISITION"
 			body = "Placeholder (9.3). Spend REQ in the terminal."
 		Step.EXIT_PROMPT:
-			id = "INTERBREAK_EXIT"
+			id = "INTERMISSION_EXIT"
 			title = "EXIT PROMPT"
 			body = "Placeholder (9.4). Initiate exit protocol or continue the run."
 

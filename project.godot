@@ -23,8 +23,11 @@ GameController="*res://Scripts/systems/GameController.gd"
 
 window/size/viewport_width=1920
 window/size/viewport_height=1080
-window/size/mode=3
 window/stretch/mode="canvas_items"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/pip_author_preview/plugin.cfg")
 
 [input]
 

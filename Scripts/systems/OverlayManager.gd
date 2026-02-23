@@ -242,7 +242,7 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		bg_block.color = Color(0, 0, 0, 1)
 		bg_block.mouse_filter = Control.MOUSE_FILTER_STOP
 		root.add_child(bg_block)
-		var scene: PackedScene = preload("res://Scenes/CaseHandlingOverlay.tscn")
+		var scene: PackedScene = preload("res://Scenes/CaseHandlingScene.tscn")
 		var inst: Node = scene.instantiate()
 		if inst != null:
 			if inst is Control:
@@ -256,6 +256,8 @@ func open(id: String, payload: Dictionary = {}) -> void:
 				inst_ctrl.offset_right = 0.0
 				inst_ctrl.offset_bottom = 0.0
 			root.add_child(inst)
+			if inst.has_method("configure_from_payload"):
+				inst.call("configure_from_payload", payload)
 			if inst.has_signal("finished"):
 				inst.connect("finished", func(success: bool, noise_points: int) -> void:
 					var cb_finished_v: Variant = payload.get("on_finished", null)
@@ -385,12 +387,12 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		right_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		right_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		right_scroll.add_child(right_text)
-	if id == "INTERBREAK_CASE" or id == "INTERBREAK_REQ" or id == "INTERBREAK_EXIT":
+	if id == "INTERMISSION_CASE" or id == "INTERMISSION_REQ" or id == "INTERMISSION_EXIT":
 		if current_root != null:
 			current_root.queue_free()
 		var ib_layer := CanvasLayer.new()
 		ib_layer.layer = 220
-		ib_layer.name = &"InterBreakOverlay"
+		ib_layer.name = &"IntermissionOverlay"
 		get_tree().current_scene.add_child(ib_layer)
 		current_root = ib_layer
 		current_id = id
@@ -430,7 +432,7 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		ib_panel.add_child(ib_vb)
 
 		var ib_title := Label.new()
-		ib_title.text = String(payload.get("title", "INTERBREAK"))
+		ib_title.text = String(payload.get("title", "INTERMISSION"))
 		ib_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		ib_vb.add_child(ib_title)
 
@@ -445,7 +447,7 @@ func open(id: String, payload: Dictionary = {}) -> void:
 		ib_continue.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		ib_continue.pressed.connect(func() -> void:
 			if controller != null:
-				controller.call("_on_interbreak_continue")
+				controller.call("_on_intermission_continue")
 		)
 		ib_vb.add_child(ib_continue)
 

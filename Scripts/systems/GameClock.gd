@@ -32,6 +32,6 @@ func get_clock_minutes_int() -> int:
 
 func format_hhmm(minutes: int) -> String:
 	var m := minutes % 60
-	var h := int(minutes / 60)
+	var h := int(float(minutes) / 60.0)
 	h = h % 24
 	return "%02d:%02d" % [h, m]

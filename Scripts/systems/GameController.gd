@@ -21,7 +21,7 @@ var _noise_carryover_next_suspect: bool = false
 var _clock: GameClock = null
 var _phone: PhoneSystem = null
 var _alarm_sys: AlarmSystem = null
-var _interbreak_sys: InterBreakSystem = null
+var _intermission_sys: IntermissionSystem = null
 var _alarm_flash: CanvasItem = null
 var _breach_active: bool = false
 var _deadline_total_s: float = 0.0
@@ -160,6 +160,9 @@ var _case_transition_busy: bool = false
 @export var case_handling_open_fade_out_s: float = 0.28
 @export var case_handling_open_black_hold_s: float = 0.08
 @export var case_handling_open_fade_in_s: float = 0.32
+@export var case_handling_pip_capture_margin_px: Vector2 = Vector2(130.0, 90.0)
+@export var case_handling_pip_capture_size_px: Vector2 = Vector2(340.0, 220.0)
+@export var case_handling_pip_capture_center_offset_px: Vector2 = Vector2(-120.0, 0.0)
 
 func _ready() -> void:
 	_overlay_manager = preload("res://Scripts/systems/OverlayManager.gd").new()
@@ -174,7 +177,7 @@ func _ready() -> void:
 	_init_revolver_system()
 	_init_noise_system()
 	_init_alarm_system()
-	_init_interbreak_system()
+	_init_intermission_system()
 	_clock = GameClock.new()
 	_clock.setup(time_policy.ingame_minutes_per_real_second, time_policy.clock_start_minutes)
 	_clock_rate_game = time_policy.ingame_minutes_per_real_second
@@ -336,8 +339,8 @@ func _unhandled_input(event: InputEvent) -> void:
 func _handle_dev_hotkeys(event: InputEvent) -> bool:
 	if dev_allow_escape_hatch and event.is_action_pressed("ui_cancel"):
 		if overlay_open:
-			if _interbreak_sys != null and _interbreak_sys.is_active() and overlay_id.begins_with("INTERBREAK_"):
-				_on_interbreak_continue()
+			if _intermission_sys != null and _intermission_sys.is_active() and overlay_id.begins_with("INTERMISSION_"):
+				_on_intermission_continue()
 			else:
 				close_overlay()
 			return true
@@ -948,51 +951,81 @@ func _init_alarm_system() -> void:
 	var cb := Callable(self, "_on_alarm_timed_out")
 	_alarm_sys.alarm_timed_out.connect(cb)
 
-func _init_interbreak_system() -> void:
-	if _interbreak_sys == null:
-		_interbreak_sys = preload("res://Scripts/systems/InterBreakSystem.gd").new()
-	_interbreak_sys.setup(self)
-	var cb := Callable(self, "_on_interbreak_finished")
-	if _interbreak_sys.has_signal("finished") and not _interbreak_sys.is_connected("finished", cb):
-		_interbreak_sys.connect("finished", cb)
+func _init_intermission_system() -> void:
+	if _intermission_sys == null:
+		_intermission_sys = preload("res://Scripts/systems/IntermissionSystem.gd").new()
+	_intermission_sys.setup(self)
+	var cb := Callable(self, "_on_intermission_finished")
+	if _intermission_sys.has_signal("finished") and not _intermission_sys.is_connected("finished", cb):
+		_intermission_sys.connect("finished", cb)
 
-func _start_interbreak_from_verdict() -> void:
-	if _interbreak_sys == null:
-		_init_interbreak_system()
-	if _interbreak_sys == null:
+func _start_intermission_from_verdict() -> void:
+	if _intermission_sys == null:
+		_init_intermission_system()
+	if _intermission_sys == null:
 		_advance_to_next_suspect()
 		set_run_state(RunState.IDLE)
 		return
-	_log("INTERBREAK: start")
-	_interbreak_sys.start_from_verdict()
+	_log("INTERMISSION: start")
+	_intermission_sys.start_from_verdict()
 
-func _on_interbreak_continue() -> void:
-	if _interbreak_sys != null and _interbreak_sys.is_active():
-		_log("INTERBREAK: continue")
-		_interbreak_sys.advance()
+func _on_intermission_continue() -> void:
+	if _intermission_sys != null and _intermission_sys.is_active():
+		_log("INTERMISSION: continue")
+		_intermission_sys.advance()
 
-func _on_interbreak_finished() -> void:
-	_log("INTERBREAK: finished -> next suspect")
+func _on_intermission_finished() -> void:
+	_log("INTERMISSION: finished -> next suspect")
 	_advance_to_next_suspect()
 	set_run_state(RunState.IDLE)
 
 func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> void:
+	var carry_noise: int = maxi(_noise_points, 0)
+	if _noise_sys != null:
+		# Case handling starts from a clean slate; carry only mini-game noise forward.
+		_noise_sys.start_suspect(0)
+		if carry_noise > 0:
+			_noise_sys.emit_noise(carry_noise, "case_handling:minigame", {"source": "case_handling"})
+		_noise_carryover_next_suspect = true
+		_sync_noise_widget(true)
 	_show_case_transition_black()
 	close_overlay()
 	_intermission_active = false
 	_advance_to_next_suspect()
 	set_run_state(RunState.IDLE)
-	_log("INTERMISSION: filed -> next suspect")
+	_log("INTERMISSION: filed -> next suspect (carry_noise=%d)" % carry_noise)
 	await _fade_in_case_transition()
 
 func _open_case_handling_overlay_with_transition() -> void:
 	if _case_transition_busy:
 		return
+	if _noise_sys != null:
+		# Wipe threshold progress from the suspect round before entering case handling.
+		_noise_carryover_next_suspect = false
+		_noise_sys.start_suspect(0)
+		_sync_noise_widget(true)
+	var payload: Dictionary = {"title": "CASE HANDLING", "body": "Placeholder (9.2)...", "on_finished": Callable(self, "_on_case_handling_filed")}
+	payload.merge(_build_case_handling_pip_payload(), true)
 	_case_transition_busy = true
 	await _fade_to_case_transition_black(case_handling_open_fade_out_s, case_handling_open_black_hold_s)
-	open_overlay("CASE_HANDLING", {"title": "CASE HANDLING", "body": "Placeholder (9.2)...", "on_finished": Callable(self, "_on_case_handling_filed")})
+	open_overlay("CASE_HANDLING", payload)
 	await _fade_from_case_transition(case_handling_open_fade_in_s)
 	_case_transition_busy = false
+
+func _build_case_handling_pip_payload() -> Dictionary:
+	# PiP framing is now authored directly on CaseHandlingScene for 1:1 editor/runtime tuning.
+	# Keep payload hook in place for future metadata, but do not override scene PiP properties.
+	return {}
+
+func _sprite_screen_rect(sprite: Sprite2D) -> Rect2:
+	if sprite == null or sprite.texture == null:
+		return Rect2(Vector2.ZERO, Vector2.ZERO)
+	var size: Vector2 = sprite.texture.get_size() * sprite.scale.abs()
+	var top_left_world: Vector2 = sprite.global_position
+	if sprite.centered:
+		top_left_world -= size * 0.5
+	var screen_pos: Vector2 = get_viewport().get_canvas_transform() * top_left_world
+	return Rect2(screen_pos, size)
 
 func _ensure_case_transition_overlay() -> void:
 	var root: Node = get_tree().current_scene
