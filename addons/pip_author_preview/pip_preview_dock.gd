@@ -1,7 +1,7 @@
 @tool
 extends VBoxContainer
 
-const GAME_SCENE_PATH := "res://Scenes/Game.tscn"
+const DEFAULT_PREVIEW_SCENE_PATH := "res://Scenes/Game.tscn"
 const CASE_SCRIPT_PATH := "res://Scripts/ui/CaseHandlingScene.gd"
 const CropOverlayScript := preload("res://addons/pip_author_preview/crop_overlay.gd")
 
@@ -44,7 +44,7 @@ func _build_ui() -> void:
 	add_child(toolbar)
 
 	_status_label = Label.new()
-	_status_label.text = "Select CaseHandlingScene in the editor to author PiP."
+	_status_label.text = "Select a PiP-enabled node in the editor to author PiP."
 	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	toolbar.add_child(_status_label)
 
@@ -194,18 +194,18 @@ func _rebuild_preview() -> void:
 		var edited_name := ""
 		if editor_interface != null and editor_interface.get_edited_scene_root() != null:
 			edited_name = " (edited root: %s)" % editor_interface.get_edited_scene_root().name
-		_status_label.text = "Select CaseHandlingScene in the editor to author PiP.%s" % edited_name
+		_status_label.text = "Select a PiP-enabled node in the editor to author PiP.%s" % edited_name
 		_values_label.text = "No target selected."
 		return
 	var preview_size := _selected_preview_size()
 	_ensure_preview_viewports(preview_size)
-	var packed: PackedScene = load(GAME_SCENE_PATH) as PackedScene
+	var packed: PackedScene = _selected_preview_scene()
 	if packed == null:
-		_status_label.text = "Failed to load %s" % GAME_SCENE_PATH
+		_status_label.text = "Failed to load preview scene."
 		return
 	var inst: Node = packed.instantiate()
 	if inst == null:
-		_status_label.text = "Failed to instantiate %s" % GAME_SCENE_PATH
+		_status_label.text = "Failed to instantiate preview scene."
 		return
 	_preview_root = inst
 	_source_vp.add_child(inst)
@@ -214,6 +214,21 @@ func _rebuild_preview() -> void:
 	_find_preview_camera_and_prepare()
 	_status_label.text = "Bound: %s" % _selected_case_node.name
 	_refresh_status_hint()
+
+func _selected_preview_scene() -> PackedScene:
+	if _selected_case_node != null and is_instance_valid(_selected_case_node):
+		var packed_v: Variant = _selected_case_node.get("pip_editor_preview_scene")
+		if packed_v is PackedScene:
+			return packed_v as PackedScene
+		var packed_v2: Variant = _selected_case_node.get("pip_author_preview_scene")
+		if packed_v2 is PackedScene:
+			return packed_v2 as PackedScene
+		var path_v: Variant = _selected_case_node.get("pip_author_preview_scene_path")
+		if path_v is String and String(path_v) != "":
+			var packed_from_path := load(String(path_v)) as PackedScene
+			if packed_from_path != null:
+				return packed_from_path
+	return load(DEFAULT_PREVIEW_SCENE_PATH) as PackedScene
 
 func _selected_preview_size() -> Vector2i:
 	if _selected_case_node != null and is_instance_valid(_selected_case_node):
@@ -323,6 +338,8 @@ func _preview_follow_target_center() -> Vector2:
 	var target: Node = null
 	if not target_path.is_empty():
 		target = _preview_root.get_node_or_null(target_path)
+		if target == null:
+			target = _find_node_by_path_suffix(_preview_root, target_path)
 	if target == null:
 		var sound := _preview_root.find_child("Sound", true, false)
 		if sound != null:
@@ -332,6 +349,35 @@ func _preview_follow_target_center() -> Vector2:
 	if target == null or not (target is Node2D):
 		return Vector2.ZERO
 	return _pip_target_screen_center_preview(_source_vp, target as Node2D)
+
+func _find_node_by_path_suffix(root: Node, wanted_path: NodePath) -> Node:
+	if root == null or wanted_path.is_empty():
+		return null
+	var wanted := String(wanted_path)
+	if wanted == "":
+		return null
+	var wanted_parts := wanted.split("/", false)
+	if wanted_parts.is_empty():
+		return null
+	var leaf := wanted_parts[wanted_parts.size() - 1]
+	var candidates: Array = []
+	_collect_nodes_named(root, leaf, candidates)
+	for n in candidates:
+		if n is Node and _node_path_ends_with(root.get_path_to(n as Node), wanted_parts):
+			return n
+	if candidates.size() > 0:
+		return candidates[0]
+	return null
+
+func _node_path_ends_with(path: NodePath, suffix_parts: Array) -> bool:
+	var parts := String(path).split("/", false)
+	if suffix_parts.size() > parts.size():
+		return false
+	var offset := parts.size() - suffix_parts.size()
+	for i in range(suffix_parts.size()):
+		if String(parts[offset + i]) != String(suffix_parts[i]):
+			return false
+	return true
 
 func _find_preferred_noise_meter(root: Node) -> Node:
 	if root == null:
@@ -459,7 +505,7 @@ func _refresh_status_hint(prefix: String = "") -> void:
 	if _status_label == null:
 		return
 	if _selected_case_node == null or not is_instance_valid(_selected_case_node):
-		_status_label.text = "Select CaseHandlingScene (or any child under it)."
+		_status_label.text = "Select a PiP-enabled node (or any child under it)."
 		return
 	var msg := "Bound: %s | Drag green box/corners. Click 'Apply + Save Scene' before running." % _selected_case_node.name
 	if prefix != "":

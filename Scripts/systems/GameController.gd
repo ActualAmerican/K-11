@@ -18,6 +18,9 @@ var _noise_sys: NoiseSystem = null
 var _noise_widget: Node = null
 var _noise_missing_logged: bool = false
 var _noise_carryover_next_suspect: bool = false
+var _noise_carryover_start_value_next_suspect: int = -1
+var _case_handling_live_noise_mode_active: bool = false
+var _case_handling_noise_accrued_scaled: int = 0
 var _clock: GameClock = null
 var _phone: PhoneSystem = null
 var _alarm_sys: AlarmSystem = null
@@ -982,13 +985,24 @@ func _on_intermission_finished() -> void:
 func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> void:
 	var carry_noise: int = maxi(_noise_points, 0)
 	if _noise_sys != null:
-		# Case handling starts from a clean slate; carry only mini-game noise forward.
-		_noise_sys.start_suspect(0)
-		if carry_noise > 0:
-			_noise_sys.emit_noise(carry_noise, "case_handling:minigame", {"source": "case_handling"})
+		if _case_handling_live_noise_mode_active:
+			# Carry the total noise accrued during case handling (scaled by live sensitivity), not the decayed current meter.
+			carry_noise = maxi(_case_handling_noise_accrued_scaled, 0)
+		else:
+			# Fallback path: carry only mini-game noise forward.
+			_noise_sys.start_suspect(0)
+			if carry_noise > 0:
+				_noise_sys.emit_noise(carry_noise, "case_handling:minigame", {"source": "case_handling"})
+		_noise_carryover_start_value_next_suspect = carry_noise
 		_noise_carryover_next_suspect = true
+		# Smooth transition: once the fade-to-black is up, visually clear the meter during scene change.
+		_show_case_transition_black()
+		_noise_sys.start_suspect(0)
 		_sync_noise_widget(true)
-	_show_case_transition_black()
+	else:
+		_show_case_transition_black()
+	_case_handling_live_noise_mode_active = false
+	_case_handling_noise_accrued_scaled = 0
 	close_overlay()
 	_intermission_active = false
 	_advance_to_next_suspect()
@@ -1002,20 +1016,50 @@ func _open_case_handling_overlay_with_transition() -> void:
 	if _noise_sys != null:
 		# Wipe threshold progress from the suspect round before entering case handling.
 		_noise_carryover_next_suspect = false
-		_noise_sys.start_suspect(0)
-		_sync_noise_widget(true)
+		_noise_carryover_start_value_next_suspect = -1
+		_case_handling_live_noise_mode_active = true
+		_case_handling_noise_accrued_scaled = 0
 	var payload: Dictionary = {"title": "CASE HANDLING", "body": "Placeholder (9.2)...", "on_finished": Callable(self, "_on_case_handling_filed")}
 	payload.merge(_build_case_handling_pip_payload(), true)
 	_case_transition_busy = true
 	await _fade_to_case_transition_black(case_handling_open_fade_out_s, case_handling_open_black_hold_s)
+	if _noise_sys != null:
+		# Reset to clean slate only after the screen is black so the snap is hidden.
+		_noise_sys.start_suspect(0)
+		_sync_noise_widget(true)
 	open_overlay("CASE_HANDLING", payload)
 	await _fade_from_case_transition(case_handling_open_fade_in_s)
 	_case_transition_busy = false
 
 func _build_case_handling_pip_payload() -> Dictionary:
 	# PiP framing is now authored directly on CaseHandlingScene for 1:1 editor/runtime tuning.
-	# Keep payload hook in place for future metadata, but do not override scene PiP properties.
-	return {}
+	# Keep PiP framing untouched, but route case-handling noise through the real NoiseSystem for live PiP parity.
+	return {
+		"noise_policy": time_policy,
+		"on_case_handling_noise": Callable(self, "_apply_case_handling_noise_live")
+	}
+
+func _apply_case_handling_noise_live(amount: int, reason: String = "", meta: Dictionary = {}) -> int:
+	if amount <= 0:
+		return (_noise_sys.get_noise() if _noise_sys != null else 0)
+	if _noise_sys == null:
+		return amount
+	var merged_meta: Dictionary = {"source": "case_handling"}
+	for k in meta.keys():
+		merged_meta[k] = meta[k]
+	if _noise_sys.has_method("set_policy") and time_policy != null:
+		_noise_sys.call("set_policy", time_policy)
+	var applied_delta: int = 0
+	if _noise_sys.has_method("emit_scaled_noise"):
+		var delta_v: Variant = _noise_sys.call("emit_scaled_noise", amount, "case_handling:%s" % reason, merged_meta)
+		if delta_v is int:
+			applied_delta = int(delta_v)
+	else:
+		_noise_sys.emit_noise(amount, "case_handling:%s" % reason, merged_meta)
+		applied_delta = amount
+	_case_handling_noise_accrued_scaled = clampi(_case_handling_noise_accrued_scaled + maxi(0, applied_delta), 0, 100)
+	_sync_noise_widget(false)
+	return _case_handling_noise_accrued_scaled
 
 func _sprite_screen_rect(sprite: Sprite2D) -> Rect2:
 	if sprite == null or sprite.texture == null:
@@ -2768,9 +2812,13 @@ func _refresh_suspect_seed() -> void:
 		_clock.add_minutes(gap)
 	if _noise_sys != null:
 		if _noise_carryover_next_suspect:
-			_noise_sys.start_suspect(_noise_sys.get_noise())
+			var start_noise := _noise_sys.get_noise()
+			if _noise_carryover_start_value_next_suspect >= 0:
+				start_noise = _noise_carryover_start_value_next_suspect
+			_noise_sys.start_suspect(start_noise)
 		else:
 			_noise_sys.start_suspect(0)
 		_noise_carryover_next_suspect = false
+		_noise_carryover_start_value_next_suspect = -1
 		_sync_noise_widget(true)
 	_reset_verdict_flow()

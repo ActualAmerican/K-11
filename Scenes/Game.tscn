@@ -6,15 +6,15 @@
 [ext_resource type="Texture2D" uid="uid://b624h13no2o5c" path="res://Assets/Image Assets/IMG_0974.PNG" id="3_7lihs"]
 [ext_resource type="Texture2D" uid="uid://ccw1xawdp6wcm" path="res://Assets/Image Assets/IMG_0964.PNG" id="4_fgofq"]
 [ext_resource type="Texture2D" uid="uid://dwaa5u1yoancj" path="res://Assets/Image Assets/IMG_0966.PNG" id="6_2irst"]
-[ext_resource type="Texture2D" uid="uid://d0wltdj03r7bc" path="res://Assets/Image Assets/IMG_0981.PNG" id="7_i0vto"]
+[ext_resource type="Texture2D" uid="uid://bgojd8v1jy18u" path="res://Assets/Image Assets/IMG_1011.PNG" id="7_i4lct"]
 [ext_resource type="Texture2D" uid="uid://cf1cxr5cydnvv" path="res://Assets/Image Assets/IMG_0962.PNG" id="8_tfod6"]
 [ext_resource type="Texture2D" uid="uid://dhwjqallojwbh" path="res://Assets/Image Assets/IMG_0967.PNG" id="9_rajel"]
+[ext_resource type="Texture2D" uid="uid://7tud7xhlq6li" path="res://Assets/Image Assets/IMG_1010.PNG" id="10_iyesh"]
 [ext_resource type="Texture2D" uid="uid://di7idi3d8kyfc" path="res://Assets/Image Assets/IMG_0968.PNG" id="10_vvhu1"]
-[ext_resource type="Texture2D" uid="uid://dkmqxupphqh5q" path="res://Assets/Image Assets/IMG_0969.PNG" id="11_lbihj"]
 [ext_resource type="Texture2D" uid="uid://coiwtup6mdty8" path="res://Assets/Image Assets/IMG_0970.PNG" id="12_raj38"]
 [ext_resource type="Texture2D" uid="uid://bnnkaalrvavs2" path="res://Assets/Image Assets/IMG_0971.PNG" id="13_8e0uq"]
-[ext_resource type="Texture2D" uid="uid://d24imrecm3po4" path="res://Assets/Image Assets/IMG_0972.PNG" id="14_i0vto"]
-[ext_resource type="Texture2D" uid="uid://bpcmjeba0fay3" path="res://Assets/Image Assets/IMG_0973.PNG" id="15_3jf1l"]
+[ext_resource type="Texture2D" uid="uid://bem7klrrlk21p" path="res://Assets/Image Assets/IMG_1009.PNG" id="13_i1pr2"]
+[ext_resource type="Texture2D" uid="uid://03iitn05epq6" path="res://Assets/Image Assets/IMG_1012.PNG" id="15_4f4ik"]
 [ext_resource type="Texture2D" uid="uid://bqk7y48khpk6l" path="res://Assets/Image Assets/IMG_1002.png" id="17_3jf1l"]
 [ext_resource type="Texture2D" uid="uid://ci5jutaxmh6y1" path="res://Assets/Image Assets/IMG_0976.PNG" id="17_356ba"]
 [ext_resource type="Texture2D" uid="uid://bhqesrx1ltejp" path="res://Assets/Image Assets/IMG_0975.PNG" id="18_i4lct"]
@@ -57,7 +57,8 @@ visible = false
 texture = ExtResource("6_2irst")
 
 [node name="InfoBoard" type="Sprite2D" parent="."]
-texture = ExtResource("7_i0vto")
+position = Vector2(-1, 14)
+texture = ExtResource("7_i4lct")
 
 [node name="Panel" type="Sprite2D" parent="."]
 visible = false
@@ -68,8 +69,8 @@ texture = ExtResource("8_tfod6")
 texture = ExtResource("10_vvhu1")
 
 [node name="Folder" type="Sprite2D" parent="."]
-position = Vector2(94, 0)
-texture = ExtResource("11_lbihj")
+position = Vector2(-29, -2)
+texture = ExtResource("10_iyesh")
 
 [node name="Danger" type="Sprite2D" parent="."]
 texture = ExtResource("12_raj38")
@@ -78,13 +79,13 @@ texture = ExtResource("12_raj38")
 texture = ExtResource("13_8e0uq")
 
 [node name="Sound" type="Sprite2D" parent="."]
-texture = ExtResource("14_i0vto")
+texture = ExtResource("13_i1pr2")
 
 [node name="NoiseMeter" type="Node2D" parent="Sound"]
 script = ExtResource("25_noise_meter_widget")
 min_angle_deg = -145.0
 max_angle_deg = -35.0
-origin_norm = Vector2(0.297, 0.59)
+origin_norm = Vector2(0.293, 0.615)
 needle_len_norm = 0.065
 label_offset_norm = Vector2(0, -0.022)
 label_size_px = Vector2(84, 30)
@@ -104,7 +105,8 @@ label_outline_size = 4
 editor_preview_value = 100
 
 [node name="Measurements" type="Sprite2D" parent="."]
-texture = ExtResource("15_3jf1l")
+position = Vector2(7, 12)
+texture = ExtResource("15_4f4ik")
 
 [node name="Frame" type="Sprite2D" parent="."]
 texture = ExtResource("17_3jf1l")
@@ -132,7 +134,7 @@ position = Vector2(18, -2)
 texture = ExtResource("22_i4lct")
 
 [node name="Intercom" type="Sprite2D" parent="."]
-position = Vector2(-39, 5)
+position = Vector2(-12, 11)
 texture = ExtResource("23_iyesh")
 
 [node name="Phone" type="Sprite2D" parent="."]

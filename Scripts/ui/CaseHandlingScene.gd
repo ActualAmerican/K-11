@@ -78,6 +78,7 @@ signal finished(success: bool, noise_points: int)
 @onready var open_drawer: Sprite2D = $OpenDrawer
 @onready var table_top: Sprite2D = $TableTop
 @onready var case_file: Sprite2D = $ClosedCaseFolder
+@onready var drawer_handle: Sprite2D = find_child("Handle", true, false) as Sprite2D
 @onready var drop_zone_indicator: Control = $DropZoneIndicator
 @onready var balance_gauge: DrawerBalanceGauge = $BalanceGauge
 @onready var noise_meter_pip: Control = $NoiseMeterPiP
@@ -99,6 +100,10 @@ var _background_design_pos: Vector2 = Vector2.ZERO
 var _open_drawer_design_pos: Vector2 = Vector2.ZERO
 var _table_top_design_pos: Vector2 = Vector2.ZERO
 var _case_file_design_pos: Vector2 = Vector2.ZERO
+var _handle_design_pos: Vector2 = Vector2.ZERO
+var _handle_drawer_offset_design: Vector2 = Vector2.ZERO
+var _handle_design_scale: Vector2 = Vector2.ONE
+var _handle_design_rot: float = 0.0
 var _filing_in_progress: bool = false
 var _fade_rect: ColorRect = null
 var _drawer_locked_open: bool = false
@@ -130,6 +135,9 @@ var _pip_calibration_active: bool = false
 var _pip_calibration_label: Label = null
 var _pip_last_capture_rect_screen: Rect2 = Rect2()
 var _pip_last_capture_rect_valid: bool = false
+var _case_noise_cb: Callable = Callable()
+var _case_noise_policy: InterrogationTimePolicy = null
+var _drawer_handle_outline: Sprite2D = null
 
 func _pip_is_follow_mode() -> bool:
 	return pip_source_mode == PipSourceMode.FOLLOW_TARGET
@@ -137,6 +145,12 @@ func _pip_is_follow_mode() -> bool:
 func configure_from_payload(payload: Dictionary) -> void:
 	if payload == null:
 		return
+	var noise_cb_v: Variant = payload.get("on_case_handling_noise", null)
+	if noise_cb_v is Callable:
+		_case_noise_cb = noise_cb_v as Callable
+	var noise_policy_v: Variant = payload.get("noise_policy", null)
+	if noise_policy_v is InterrogationTimePolicy:
+		_case_noise_policy = noise_policy_v as InterrogationTimePolicy
 	var center_v: Variant = payload.get("pip_source_center_px", null)
 	if center_v is Vector2:
 		pip_source_center_px = center_v as Vector2
@@ -149,6 +163,8 @@ func configure_from_payload(payload: Dictionary) -> void:
 func _ready() -> void:
 	if Engine.is_editor_hint():
 		set_process(true)
+		_ensure_runtime_drawer_handle_parenting()
+		_ensure_drawer_handle_outline()
 		_setup_live_pip_feed()
 		if editor_preview_runtime_layout:
 			_capture_design_layout_once()
@@ -161,6 +177,8 @@ func _ready() -> void:
 		return
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_rng.randomize()
+	_ensure_runtime_drawer_handle_parenting()
+	_ensure_drawer_handle_outline()
 	_pull_ratio = 0.0
 	_drawer_locked_open = false
 	_capture_design_layout_once()
@@ -312,16 +330,19 @@ func _input(event: InputEvent) -> void:
 			if _is_file_drop_ready() and _get_drop_zone_rect().has_point(mouse_pos):
 				_start_filing_sequence()
 				return
-			if _is_over_sprite(open_drawer, mouse_pos):
+			var click_target: Sprite2D = drawer_handle if drawer_handle != null else open_drawer
+			if _is_over_sprite(click_target, mouse_pos):
 				_drag_drawer = true
 				_last_tick_ms = now_ms
 				_balance_begin()
+				_update_handle_visual()
 				return
 		else:
 			var was_dragging: bool = _drag_drawer
 			_drag_drawer = false
 			_balance_end()
 			_pull_intent_strength = 0.0
+			_update_handle_visual()
 			if was_dragging and _pull_ratio < 0.999 and not _filing_in_progress and not _locked:
 				_add_noise_points(balance_release_slam_noise, "drawer slam")
 				_drawer_locked_open = false
@@ -512,6 +533,7 @@ func _apply_balance_transform() -> void:
 	var shift: float = _balance_value * balance_visual_shift_px
 	open_drawer.position = _drawer_base_pos + Vector2(shift, 0.0)
 	open_drawer.rotation = deg_to_rad(_balance_value * balance_visual_rot_deg)
+	_update_handle_visual()
 
 func _position_balance_gauge() -> void:
 	if balance_gauge == null or open_drawer == null or open_drawer.texture == null:
@@ -1004,6 +1026,12 @@ func _fit_scene_for_size(vp_size: Vector2) -> void:
 		case_file.centered = true
 		case_file.position = center + ((_case_file_design_pos - _background_design_pos) * scale_cover)
 		case_file.scale = Vector2.ONE * scale_cover
+	if drawer_handle != null:
+		drawer_handle.centered = true
+		drawer_handle.position = center + ((_handle_design_pos - _background_design_pos) * scale_cover)
+		drawer_handle.scale = _handle_design_scale * scale_cover
+		drawer_handle.rotation = _handle_design_rot
+	_update_handle_visual()
 	_refresh_drop_zone_indicator()
 
 func _capture_design_layout_once() -> void:
@@ -1017,6 +1045,12 @@ func _capture_design_layout_once() -> void:
 		_table_top_design_pos = table_top.position
 	if case_file != null:
 		_case_file_design_pos = case_file.position
+	if drawer_handle != null:
+		_handle_design_pos = drawer_handle.position
+		_handle_design_scale = drawer_handle.scale
+		_handle_design_rot = drawer_handle.rotation
+		if open_drawer != null:
+			_handle_drawer_offset_design = drawer_handle.position - open_drawer.position
 	_layout_captured = true
 
 func _apply_layer_order() -> void:
@@ -1028,6 +1062,8 @@ func _apply_layer_order() -> void:
 		table_top.z_index = 3
 	if case_file != null:
 		case_file.z_index = 4
+	if drawer_handle != null:
+		drawer_handle.z_index = 16
 	if balance_gauge != null and balance_gauge is CanvasItem:
 		(balance_gauge as CanvasItem).z_index = 14
 	if drop_zone_indicator != null and drop_zone_indicator is CanvasItem:
@@ -1069,6 +1105,7 @@ func _balance_begin() -> void:
 	_safe_wander_phase = _rng.randf_range(0.0, TAU)
 	_scrape_accum = 0.0
 	_drag_dx_accum = 0.0
+	_update_handle_visual()
 	if balance_gauge != null:
 		_position_balance_gauge()
 		balance_gauge.yellow_threshold = balance_yellow_threshold
@@ -1084,11 +1121,19 @@ func _balance_end() -> void:
 	_red_hold_accum = 0.0
 	open_drawer.rotation = 0.0
 	_apply_balance_transform()
+	_update_handle_visual()
 
 func _add_noise_points(amount: int, _reason: String = "") -> void:
 	if amount <= 0:
 		return
-	_noise_points += amount
+	if not _case_noise_cb.is_null():
+		var total_v: Variant = _case_noise_cb.call(amount, _reason, {"raw_amount": amount})
+		if total_v is int:
+			_noise_points = maxi(0, int(total_v))
+		else:
+			_noise_points += amount
+	else:
+		_noise_points += amount
 	_sync_noise_meter_pip(false)
 	_update_ui()
 
@@ -1173,6 +1218,7 @@ func _start_filing_sequence() -> void:
 	_drag_drawer = false
 	_drawer_locked_open = false
 	_balance_end()
+	_update_handle_visual()
 	if drop_zone_indicator != null:
 		if drop_zone_indicator.has_method("set_active"):
 			drop_zone_indicator.call("set_active", false)
@@ -1208,3 +1254,57 @@ func _complete_filing_sequence() -> void:
 	_locked = true
 	emit_signal("finished", true, _noise_points)
 	queue_free()
+
+func _ensure_runtime_drawer_handle_parenting() -> void:
+	if drawer_handle == null:
+		return
+	if drawer_handle.get_parent() == self:
+		return
+	# If the authored handle was placed under the PiP container (or any other branch),
+	# move it to the scene root so it can overlay the real drawer and balance gauge.
+	var gpos: Vector2 = drawer_handle.global_position
+	var grot: float = drawer_handle.global_rotation
+	var gscl: Vector2 = drawer_handle.global_scale
+	var old_parent: Node = drawer_handle.get_parent()
+	if old_parent != null:
+		old_parent.remove_child(drawer_handle)
+	add_child(drawer_handle)
+	drawer_handle.owner = null if Engine.is_editor_hint() else drawer_handle.owner
+	drawer_handle.global_position = gpos
+	drawer_handle.global_rotation = grot
+	drawer_handle.global_scale = gscl
+
+func _ensure_drawer_handle_outline() -> void:
+	if drawer_handle == null or drawer_handle.texture == null:
+		return
+	if _drawer_handle_outline != null and is_instance_valid(_drawer_handle_outline):
+		return
+	var outline: Sprite2D = preload("res://Scripts/ui/AlphaOutline.gd").new() as Sprite2D
+	if outline == null:
+		return
+	_drawer_handle_outline = outline
+	outline.name = "DrawerHandleHoverOutline"
+	outline.texture = drawer_handle.texture
+	outline.centered = drawer_handle.centered
+	outline.z_index = drawer_handle.z_index + 1
+	outline.visible = false
+	drawer_handle.add_child(outline)
+	if Engine.is_editor_hint():
+		outline.owner = null
+
+func _update_handle_visual() -> void:
+	if drawer_handle == null:
+		return
+	if open_drawer != null and drawer_handle.get_parent() == self:
+		var sx: float = absf(open_drawer.scale.x)
+		var sy: float = absf(open_drawer.scale.y)
+		var off: Vector2 = Vector2(_handle_drawer_offset_design.x * sx, _handle_drawer_offset_design.y * sy)
+		drawer_handle.position = open_drawer.position + off.rotated(open_drawer.rotation)
+		drawer_handle.rotation = open_drawer.rotation + _handle_design_rot
+		drawer_handle.scale = Vector2(_handle_design_scale.x * sx, _handle_design_scale.y * sy)
+	drawer_handle.modulate = Color(1, 1, 1, 1)
+	if _drawer_handle_outline != null and is_instance_valid(_drawer_handle_outline):
+		_drawer_handle_outline.texture = drawer_handle.texture
+		_drawer_handle_outline.centered = drawer_handle.centered
+		var show_outline: bool = (not _drag_drawer) and (not _filing_in_progress) and (not _locked) and (not _drawer_locked_open) and _pull_ratio < 0.999
+		_drawer_handle_outline.visible = show_outline

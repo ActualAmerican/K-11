@@ -147,6 +147,19 @@ func emit_noise(amount: int, reason: String, meta: Dictionary = {}, log_event: b
 	if (not breach_active) and noise_i >= NOISE_MAX:
 		_trigger_breach(meta)
 
+func emit_scaled_noise(base_amount: int, reason: String, meta: Dictionary = {}, log_event: bool = true) -> int:
+	if base_amount <= 0:
+		return 0
+	var before := noise_i
+	var combined_meta := meta.duplicate()
+	combined_meta["sensitivity"] = _sensitivity
+	combined_meta["base_delta"] = base_amount
+	var scaled := int(round(float(base_amount) * _sensitivity))
+	if scaled <= 0:
+		return 0
+	emit_noise(scaled, reason, combined_meta, log_event)
+	return noise_i - before
+
 func apply_trigger(id: StringName, meta: Dictionary = {}) -> void:
 	if _policy == null:
 		return
