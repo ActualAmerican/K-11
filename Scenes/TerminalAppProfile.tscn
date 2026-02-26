@@ -1,0 +1,44 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://Scripts/ui/TerminalAppStub.gd" id="1"]
+
+[node name="TerminalAppProfile" type="Control"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1")
+app_title = "PLAYER PROFILE"
+body_text = "[b]PLAYER PROFILE[/b]\n\n[stub]\n\nLater:\n- corruption / distortion\n- psyche / health\n- run modifiers / debuffs"
+primary_label = ""
+primary_intermission_only = false
+locked_reason = ""
+
+[node name="VBox" type="VBoxContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8
+offset_top = 8
+offset_right = -8
+offset_bottom = -8
+
+[node name="Title" type="Label" parent="VBox"]
+unique_name_in_owner = true
+text = "PLAYER PROFILE"
+
+[node name="LockBanner" type="Label" parent="VBox"]
+unique_name_in_owner = true
+text = ""
+visible = false
+
+[node name="Body" type="RichTextLabel" parent="VBox"]
+unique_name_in_owner = true
+bbcode_enabled = true
+fit_content = true
+scroll_active = true
+size_flags_vertical = 3
+text = ""
+
+[node name="Primary" type="Button" parent="VBox"]
+unique_name_in_owner = true
+text = ""
+visible = false

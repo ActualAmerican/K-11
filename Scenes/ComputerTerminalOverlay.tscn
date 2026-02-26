@@ -56,19 +56,23 @@ text = "HOME"
 unique_name_in_owner = true
 text = "REQ"
 
-[node name="TabLogs" type="Button" parent="Frame/Root/TabsRow"]
+[node name="TabExtract" type="Button" parent="Frame/Root/TabsRow"]
 unique_name_in_owner = true
-text = "LOGS"
+text = "EXTRACT"
 
 [node name="TabProfile" type="Button" parent="Frame/Root/TabsRow"]
 unique_name_in_owner = true
 text = "PROFILE"
 
+[node name="TabTelemetry" type="Button" parent="Frame/Root/TabsRow"]
+unique_name_in_owner = true
+text = "TELEMETRY"
+
 [node name="BodyPanel" type="PanelContainer" parent="Frame/Root"]
 size_flags_vertical = 3
 mouse_filter = 2
 
-[node name="Body" type="RichTextLabel" parent="Frame/Root/BodyPanel"]
+[node name="ContentMount" type="Control" parent="Frame/Root/BodyPanel"]
 unique_name_in_owner = true
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -76,11 +80,7 @@ offset_left = 12.0
 offset_top = 12.0
 offset_right = -12.0
 offset_bottom = -12.0
-bbcode_enabled = true
-fit_content = true
-scroll_active = true
 mouse_filter = 2
-text = "[b]HOME[/b]\n\n..."
 
 [node name="Hint" type="Label" parent="Frame/Root"]
 unique_name_in_owner = true

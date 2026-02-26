@@ -228,6 +228,74 @@ func open(id: String, payload: Dictionary = {}) -> void:
 			if controller != null and controller.has_method("close_overlay"):
 				controller.call("close_overlay")
 		)
+	if id == "COMPUTER_TERMINAL":
+		panel.visible = false
+		var scene: PackedScene = preload("res://Scenes/ComputerTerminalOverlay.tscn")
+		var inst: Node = scene.instantiate()
+		if inst != null:
+			if inst is Control:
+				var inst_ctrl: Control = inst
+				inst_ctrl.anchor_left = 0.0
+				inst_ctrl.anchor_top = 0.0
+				inst_ctrl.anchor_right = 1.0
+				inst_ctrl.anchor_bottom = 1.0
+				inst_ctrl.offset_left = 0.0
+				inst_ctrl.offset_top = 0.0
+				inst_ctrl.offset_right = 0.0
+				inst_ctrl.offset_bottom = 0.0
+			root.add_child(inst)
+			if inst.has_method("set_controller"):
+				inst.call("set_controller", controller)
+	if id == "VENT_EXIT":
+		panel.visible = false
+		var bg_block: ColorRect = ColorRect.new()
+		bg_block.anchor_left = 0.0
+		bg_block.anchor_top = 0.0
+		bg_block.anchor_right = 1.0
+		bg_block.anchor_bottom = 1.0
+		bg_block.offset_left = 0.0
+		bg_block.offset_top = 0.0
+		bg_block.offset_right = 0.0
+		bg_block.offset_bottom = 0.0
+		bg_block.color = Color(0, 0, 0, 1)
+		bg_block.mouse_filter = Control.MOUSE_FILTER_STOP
+		root.add_child(bg_block)
+		var scene: PackedScene = preload("res://Scenes/VentExitScene.tscn")
+		var inst: Node = scene.instantiate()
+		if inst != null:
+			if inst is Control:
+				var inst_ctrl: Control = inst
+				inst_ctrl.anchor_left = 0.0
+				inst_ctrl.anchor_top = 0.0
+				inst_ctrl.anchor_right = 1.0
+				inst_ctrl.anchor_bottom = 1.0
+				inst_ctrl.offset_left = 0.0
+				inst_ctrl.offset_top = 0.0
+				inst_ctrl.offset_right = 0.0
+				inst_ctrl.offset_bottom = 0.0
+			root.add_child(inst)
+			if inst.has_method("set_controller"):
+				inst.call("set_controller", controller)
+	if id == "END_CARD":
+		panel.visible = false
+		var scene: PackedScene = preload("res://Scenes/EndCardOverlay.tscn")
+		var inst: Node = scene.instantiate()
+		if inst != null:
+			if inst is Control:
+				var inst_ctrl: Control = inst
+				inst_ctrl.anchor_left = 0.0
+				inst_ctrl.anchor_top = 0.0
+				inst_ctrl.anchor_right = 1.0
+				inst_ctrl.anchor_bottom = 1.0
+				inst_ctrl.offset_left = 0.0
+				inst_ctrl.offset_top = 0.0
+				inst_ctrl.offset_right = 0.0
+				inst_ctrl.offset_bottom = 0.0
+			root.add_child(inst)
+			if inst.has_method("set_controller"):
+				inst.call("set_controller", controller)
+			if inst.has_method("configure_from_payload"):
+				inst.call("configure_from_payload", payload)
 	if id == "CASE_HANDLING":
 		panel.visible = false
 		var bg_block: ColorRect = ColorRect.new()

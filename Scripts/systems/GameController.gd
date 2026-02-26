@@ -68,7 +68,13 @@ var _computer_base_modulate: Color = Color(1, 1, 1, 1)
 var _computer_image: Image = null
 var _computer_image_size: Vector2i = Vector2i.ZERO
 var _computer_outline: Node = null
+var _computer_screen_window: Node = null
 var _computer_hover: bool = false
+var _vent_node: Sprite2D = null
+var _vent_image: Image = null
+var _vent_image_size: Vector2i = Vector2i.ZERO
+var _vent_outline: Node = null
+var _vent_hover: bool = false
 var _case_drawer_node: Sprite2D = null
 var _case_drawer_base_modulate: Color = Color(1, 1, 1, 1)
 var _case_drawer_image: Image = null
@@ -76,7 +82,9 @@ var _case_drawer_image_size: Vector2i = Vector2i.ZERO
 var _case_drawer_outline: Node = null
 var _case_drawer_hover: bool = false
 var _intermission_active: bool = false
+var exit_vent_removed: bool = false
 var _pending_verdict_id: String = ""
+var _run_state_before_overlay: int = RunState.IDLE
 var _verdict_buttons: Array[Button] = []
 var _verdict_committed: bool = false
 var _verdict_choice: String = ""
@@ -195,6 +203,8 @@ func _ready() -> void:
 	_cache_camera()
 	_cache_phone()
 	_cache_computer()
+	_cache_computer_screen_window()
+	_cache_vent()
 	_cache_alarm_stub()
 	_update_app_state()
 	_apply_state_policy("ready")
@@ -273,9 +283,14 @@ func _process(_delta: float) -> void:
 				(_phone_outline as CanvasItem).visible = _phone_hover
 		if _computer_node != null and _camera_node != null:
 			var mouse_world_computer: Vector2 = _camera_node.get_global_mouse_position()
-			_computer_hover = _intermission_active and _is_mouse_over_computer(mouse_world_computer)
+			_computer_hover = _is_mouse_over_computer(mouse_world_computer)
 			if _computer_outline is CanvasItem:
 				(_computer_outline as CanvasItem).visible = _computer_hover
+		if _vent_node != null and _camera_node != null:
+			var mouse_world_vent: Vector2 = _camera_node.get_global_mouse_position()
+			_vent_hover = _is_mouse_over_vent(mouse_world_vent)
+			if _vent_outline is CanvasItem:
+				(_vent_outline as CanvasItem).visible = _vent_hover
 		if _case_drawer_node != null and _camera_node != null:
 			var mouse_world_case_drawer: Vector2 = _camera_node.get_global_mouse_position()
 			_case_drawer_hover = _intermission_active and _is_mouse_over_case_drawer(mouse_world_case_drawer)
@@ -314,16 +329,22 @@ func _unhandled_input(event: InputEvent) -> void:
 				_cache_phone()
 			if _computer_node == null:
 				_cache_computer()
+			if _vent_node == null:
+				_cache_vent()
 			if _case_drawer_node == null:
 				_cache_case_drawer()
 			if _camera_node == null:
 				return
 			var mouse_world: Vector2 = _camera_node.get_global_mouse_position()
+			if _vent_node != null and _is_mouse_over_vent(mouse_world):
+				_open_vent_exit_overlay()
+				get_viewport().set_input_as_handled()
+				return
+			if _computer_node != null and _is_mouse_over_computer(mouse_world):
+				_open_computer_terminal()
+				get_viewport().set_input_as_handled()
+				return
 			if _intermission_active:
-				if _computer_node != null and _is_mouse_over_computer(mouse_world):
-					open_overlay("REQ_TERMINAL", {"title": "REQUISITION", "body": "Placeholder (9.3)..."})
-					get_viewport().set_input_as_handled()
-					return
 				if _case_drawer_node != null and _is_mouse_over_case_drawer(mouse_world):
 					_open_case_handling_overlay_with_transition()
 					get_viewport().set_input_as_handled()
@@ -595,6 +616,7 @@ func open_overlay(id: String, payload: Dictionary = {}) -> void:
 	overlay_id = id
 	if id != "VERDICT_RESULT" and _overlay_manager != null:
 		_overlay_manager.call("open", id, payload)
+	_run_state_before_overlay = run_state
 	set_run_state(RunState.OVERLAY)
 	if dev_log_overlays:
 		_log("OVERLAY open: %s" % id)
@@ -610,10 +632,15 @@ func close_overlay() -> void:
 	else:
 		if _overlay_manager != null:
 			_overlay_manager.call("close")
+	var closed_overlay_id: String = overlay_id
 	overlay_open = false
 	overlay_id = ""
 	_clear_folder_highlight()
-	set_run_state(RunState.IDLE)
+	if closed_overlay_id == "VERDICT_RESULT":
+		set_run_state(RunState.IDLE)
+	else:
+		set_run_state(_run_state_before_overlay)
+	_run_state_before_overlay = RunState.IDLE
 	if _overflow_discharge_pending:
 		_overflow_discharge_pending = false
 		_play_overflow_discharge(_overflow_discharge_reason)
@@ -1005,6 +1032,10 @@ func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> v
 	_case_handling_noise_accrued_scaled = 0
 	close_overlay()
 	_intermission_active = false
+	if _computer_screen_window == null:
+		_cache_computer_screen_window()
+	if _computer_screen_window != null and _computer_screen_window.has_method("set_enabled"):
+		_computer_screen_window.call("set_enabled", true)
 	_advance_to_next_suspect()
 	set_run_state(RunState.IDLE)
 	_log("INTERMISSION: filed -> next suspect (carry_noise=%d)" % carry_noise)
@@ -1750,6 +1781,61 @@ func _cache_computer() -> void:
 				_computer_image_size = _computer_image.get_size()
 		_ensure_computer_outline()
 
+func _cache_computer_screen_window() -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	if _computer_screen_window != null and is_instance_valid(_computer_screen_window):
+		return
+	_computer_screen_window = root.get_node_or_null("Computer/ComputerScreenWindow")
+	if _computer_screen_window == null:
+		_computer_screen_window = root.get_node_or_null("Window/Computer/ComputerScreenWindow")
+	if _computer_screen_window != null and _computer_screen_window.has_signal("open_requested"):
+		var cb := Callable(self, "_open_computer_terminal")
+		if not _computer_screen_window.is_connected("open_requested", cb):
+			_computer_screen_window.connect("open_requested", cb)
+	if _computer_screen_window != null and _computer_screen_window.has_method("set_enabled"):
+		_computer_screen_window.call("set_enabled", true)
+
+func _cache_vent() -> void:
+	var root: Node = get_tree().current_scene
+	if root == null:
+		return
+	if _vent_node != null:
+		return
+	var vent_node: Node = root.find_child("Vent", true, false)
+	if vent_node is Sprite2D:
+		_vent_node = vent_node as Sprite2D
+		if _vent_node.texture != null:
+			_vent_image = _vent_node.texture.get_image()
+			if _vent_image != null:
+				_vent_image_size = _vent_image.get_size()
+		_ensure_vent_outline()
+
+func _open_computer_terminal() -> void:
+	open_overlay("COMPUTER_TERMINAL", {})
+
+func _open_vent_exit_overlay() -> void:
+	if overlay_open:
+		return
+	open_overlay("VENT_EXIT", {})
+
+func request_exit_protocol_success() -> void:
+	if overlay_open:
+		close_overlay()
+	var noise_v: Variant = get("_noise_value")
+	var danger_v: Variant = get("_danger_points")
+	var pulls_v: Variant = get("_revolver_pulls_used")
+	var payload: Dictionary = {
+		"title": "ESCAPED",
+		"reason": "Exit Protocol (stub)",
+		"suspects_cleared": int(suspect_index),
+		"noise": noise_v if noise_v != null else "?",
+		"danger": danger_v if danger_v != null else "?",
+		"revolver_pulls_used": pulls_v if pulls_v != null else "?",
+	}
+	open_overlay("END_CARD", payload)
+
 func _is_mouse_over_computer(mouse_world: Vector2) -> bool:
 	if _computer_node == null or _computer_node.texture == null:
 		return false
@@ -1772,6 +1858,52 @@ func _is_mouse_over_computer(mouse_world: Vector2) -> bool:
 			return a > 0.1
 
 	return true
+
+func _is_mouse_over_vent(mouse_world: Vector2) -> bool:
+	if _vent_node == null or _vent_node.texture == null:
+		return false
+	var local: Vector2 = _vent_node.to_local(mouse_world)
+	var size: Vector2 = _vent_node.texture.get_size()
+	var rect := Rect2(Vector2.ZERO, size)
+	if _vent_node.centered:
+		rect.position = -size * 0.5
+	if not rect.has_point(local):
+		return false
+
+	if _vent_image != null and _vent_image_size != Vector2i.ZERO:
+		var tex_pos: Vector2 = local
+		if _vent_node.centered:
+			tex_pos += size * 0.5
+		var ix: int = int(floor(tex_pos.x))
+		var iy: int = int(floor(tex_pos.y))
+		if ix >= 0 and iy >= 0 and ix < _vent_image_size.x and iy < _vent_image_size.y:
+			var a: float = _vent_image.get_pixel(ix, iy).a
+			return a > 0.1
+	return true
+
+func _ensure_vent_outline() -> void:
+	if _vent_node == null:
+		return
+	if _vent_outline != null:
+		return
+	if _vent_node.texture == null:
+		return
+
+	var outline: Sprite2D = preload("res://Scripts/ui/AlphaOutline.gd").new() as Sprite2D
+	_vent_outline = outline
+	if outline == null:
+		return
+	outline.name = "VentHoverOutline"
+	outline.texture = _vent_node.texture
+	outline.centered = _vent_node.centered
+	outline.z_index = _vent_node.z_index + 1
+	outline.visible = false
+	outline.set("outline_color", Color(1, 1, 1, 0.95))
+	outline.set("outline_size", 3.0)
+	outline.set("outline_softness", 0.55)
+	outline.set("pulse_speed", 1.3)
+	outline.set("pulse_amount", 0.30)
+	_vent_node.add_child(outline)
 
 func _ensure_computer_outline() -> void:
 	if _computer_node == null:
@@ -2027,6 +2159,10 @@ func _on_verdict_overlay_continued() -> void:
 		set_run_state(RunState.OUTCOME)
 	_pending_run_fail = false
 	_intermission_active = true
+	if _computer_screen_window == null:
+		_cache_computer_screen_window()
+	if _computer_screen_window != null and _computer_screen_window.has_method("set_enabled"):
+		_computer_screen_window.call("set_enabled", true)
 	_log("INTERMISSION: start (computer optional; file case to proceed)")
 
 func _advance_to_next_suspect() -> void:
@@ -2510,6 +2646,11 @@ func _reset_run_state() -> void:
 	_phone_forced = false
 	_tick_1hz_accum = 0.0
 	_intermission_active = false
+	exit_vent_removed = false
+	if _computer_screen_window == null:
+		_cache_computer_screen_window()
+	if _computer_screen_window != null and _computer_screen_window.has_method("set_enabled"):
+		_computer_screen_window.call("set_enabled", true)
 	suspect_index = 0
 	_refresh_suspect_seed()
 	if _revolver_sys != null:

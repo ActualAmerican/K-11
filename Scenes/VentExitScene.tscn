@@ -1,0 +1,94 @@
+[gd_scene load_steps=5 format=3 uid="uid://d33uyry0rv75k"]
+
+[ext_resource type="Script" uid="uid://dlbri60tymig4" path="res://Scripts/ui/VentExitScene.gd" id="1"]
+[ext_resource type="Texture2D" uid="uid://du6765nhpr15l" path="res://Assets/Image Assets/IMG_1017.jpeg" id="2_5ct2y"]
+[ext_resource type="Texture2D" uid="uid://ba4wga4n0hdty" path="res://Assets/Image Assets/IMG_1018.png" id="3_1jv74"]
+[ext_resource type="Texture2D" uid="uid://142bm4p6cr5q" path="res://Assets/Image Assets/IMG_1016.png" id="4_d5n4g"]
+
+[node name="VentExitScene" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("1")
+
+[node name="Bg" type="ColorRect" parent="."]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Stage" type="Node2D" parent="."]
+position = Vector2(960, 540)
+
+[node name="Wall" type="Sprite2D" parent="Stage"]
+texture = ExtResource("2_5ct2y")
+
+[node name="VentOpen" type="Sprite2D" parent="Stage"]
+texture = ExtResource("3_1jv74")
+
+[node name="VentCover" type="Sprite2D" parent="Stage"]
+texture = ExtResource("4_d5n4g")
+
+[node name="VentCoverClick" type="Button" parent="."]
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -220.0
+offset_right = 220.0
+offset_bottom = 220.0
+flat = true
+
+[node name="VentOpenClick" type="Button" parent="."]
+visible = false
+layout_mode = 0
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -220.0
+offset_top = -220.0
+offset_right = 220.0
+offset_bottom = 220.0
+flat = true
+
+[node name="Hint" type="Label" parent="."]
+visible = false
+layout_mode = 0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -520.0
+offset_top = 24.0
+offset_right = 520.0
+offset_bottom = 58.0
+text = "EXIT PROTOCOL (stub)"
+horizontal_alignment = 1
+
+[node name="SubHint" type="Label" parent="."]
+visible = false
+layout_mode = 0
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -520.0
+offset_top = 58.0
+offset_right = 520.0
+offset_bottom = 92.0
+text = "Click the vent cover to remove it."
+horizontal_alignment = 1
+
+[node name="Cancel" type="Button" parent="."]
+layout_mode = 0
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 20.0
+offset_top = -70.0
+offset_right = 170.0
+offset_bottom = -30.0
+text = "Cancel"

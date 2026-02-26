@@ -1,4 +1,4 @@
-[gd_scene load_steps=31 format=3 uid="uid://skkut8fchrar"]
+[gd_scene load_steps=32 format=3 uid="uid://skkut8fchrar"]
 
 [ext_resource type="Texture2D" uid="uid://dvx87r175v28j" path="res://Assets/Image Assets/Wall.PNG" id="1_iukft"]
 [ext_resource type="Texture2D" uid="uid://bip8s6yw33qga" path="res://Assets/Image Assets/Desk.PNG" id="2_gl6un"]
@@ -29,6 +29,7 @@
 [ext_resource type="Texture2D" uid="uid://cggk4h074ca8r" path="res://Assets/Image Assets/IMG_0984.PNG" id="24_3jf1l"]
 [ext_resource type="PackedScene" path="res://Scenes/RevolverWidget.tscn" id="24_revolver_widget"]
 [ext_resource type="Script" uid="uid://ciumxpifprwdc" path="res://Scripts/ui/NoiseMeterWidget.gd" id="25_noise_meter_widget"]
+[ext_resource type="PackedScene" path="res://Scenes/ComputerScreenWindow.tscn" id="26_computer_screen_window"]
 
 [sub_resource type="LabelSettings" id="LabelSettings_i0vto"]
 font_size = 12
@@ -116,6 +117,17 @@ texture = ExtResource("17_356ba")
 
 [node name="Computer" type="Sprite2D" parent="."]
 texture = ExtResource("18_i4lct")
+
+[node name="ComputerScreenWindow" parent="Computer" instance=ExtResource("26_computer_screen_window")]
+z_index = 20
+layout_mode = 3
+anchors_preset = 0
+offset_left = -222.0
+offset_top = 38.0
+offset_right = 139.0
+offset_bottom = 244.0
+screen_pos_local = Vector2(-222, 38)
+screen_size_local = Vector2(361, 206)
 
 [node name="Combo" type="Sprite2D" parent="."]
 texture = ExtResource("19_iyesh")

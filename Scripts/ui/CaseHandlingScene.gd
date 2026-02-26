@@ -1286,11 +1286,17 @@ func _ensure_drawer_handle_outline() -> void:
 	outline.name = "DrawerHandleHoverOutline"
 	outline.texture = drawer_handle.texture
 	outline.centered = drawer_handle.centered
+	outline.show_behind_parent = false
 	outline.z_index = drawer_handle.z_index + 1
+	outline.set("outline_color", Color(1, 1, 1, 0.95))
+	outline.set("outline_size", 5.5)
+	outline.set("outline_softness", 0.35)
+	outline.set("pulse_amount", 0.20)
 	outline.visible = false
 	drawer_handle.add_child(outline)
 	if Engine.is_editor_hint():
 		outline.owner = null
+	_update_handle_visual()
 
 func _update_handle_visual() -> void:
 	if drawer_handle == null:
@@ -1308,3 +1314,4 @@ func _update_handle_visual() -> void:
 		_drawer_handle_outline.centered = drawer_handle.centered
 		var show_outline: bool = (not _drag_drawer) and (not _filing_in_progress) and (not _locked) and (not _drawer_locked_open) and _pull_ratio < 0.999
 		_drawer_handle_outline.visible = show_outline
+		_drawer_handle_outline.z_index = drawer_handle.z_index + 1
