@@ -312,6 +312,11 @@ func _input(event: InputEvent) -> void:
 	if Engine.is_editor_hint():
 		return
 	if event is InputEventKey and event.pressed and not event.echo:
+		var dev_root: Node = get_node_or_null("/root/DevRoot")
+		if dev_root != null and dev_root.has_method("handle_case_handling_input"):
+			if bool(dev_root.call("handle_case_handling_input", event, self)):
+				get_viewport().set_input_as_handled()
+				return
 		if _handle_pip_calibration_key(event as InputEventKey):
 			get_viewport().set_input_as_handled()
 			return
@@ -353,6 +358,8 @@ func _input(event: InputEvent) -> void:
 		_drag_dx_accum += event.relative.x
 
 func _handle_pip_calibration_key(event: InputEventKey) -> bool:
+	if not DevGate.ENABLED:
+		return false
 	if not pip_runtime_calibration_hotkey_enabled:
 		return false
 	if event.keycode == KEY_F8:

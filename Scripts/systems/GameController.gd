@@ -176,6 +176,7 @@ var _case_transition_busy: bool = false
 @export var case_handling_pip_capture_center_offset_px: Vector2 = Vector2(-120.0, 0.0)
 
 func _ready() -> void:
+	add_to_group("game_controller")
 	_overlay_manager = preload("res://Scripts/systems/OverlayManager.gd").new()
 	_overlay_manager.name = &"OverlayManager"
 	_overlay_manager.call("set_controller", self)
@@ -195,11 +196,7 @@ func _ready() -> void:
 	_clock_rate_intermission = 1.0 / 60.0
 	_phone = PhoneSystem.new()
 	_phone.setup(_noise_sys, time_policy)
-	_install_hud()
 	_init_verdict_flow_ui()
-	_install_seed_prompt()
-	_set_dev_hud_visible(dev_hud_enabled)
-	_cleanup_duplicate_hud_labels()
 	_cache_camera()
 	_cache_phone()
 	_cache_computer()
@@ -251,12 +248,6 @@ func _process(_delta: float) -> void:
 		if _noise_sys != null:
 			_noise_sys.tick(_delta)
 			_sync_noise_widget(false)
-	if dev_hud_enabled:
-		_hud_refresh_accum += _delta
-		if _hud_refresh_accum >= HUD_REFRESH_INTERVAL:
-			_hud_refresh_accum = 0.0
-			_update_hud()
-
 	if app_state == AppState.GAME and not overlay_open:
 		if _case_folder == null:
 			_cache_case_folder()
@@ -302,14 +293,9 @@ func _input(event: InputEvent) -> void:
 		return
 	if is_instance_valid(_suspect_import_dialog) and _suspect_import_dialog.visible:
 		return
-	if _handle_dev_hotkeys(event):
-		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if is_instance_valid(_suspect_import_dialog) and _suspect_import_dialog.visible:
-		return
-	if _handle_dev_hotkeys(event):
-		get_viewport().set_input_as_handled()
 		return
 	if _case_transition_busy:
 		return
@@ -451,7 +437,6 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 			if k.keycode == KEY_F8:
 				_log("HOTKEY F8: do not use in-editor (Godot stops play). Use Ctrl+Shift+E for export.")
 				return true
-			# Revolver dev: 0..6 sets live rounds (fresh cylinder).
 			if not k.ctrl_pressed and not k.shift_pressed:
 				var pk := k.physical_keycode
 				var kc := k.keycode
@@ -476,7 +461,6 @@ func _handle_dev_hotkeys(event: InputEvent) -> bool:
 				if pk == KEY_6 or kc == KEY_6 or kc == KEY_KP_6:
 					_dev_set_live_rounds_and_sync(6)
 					return true
-			# Editor-safe dev hotkeys (avoid F8 stop, F9 play bindings)
 			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_E:
 				_dev_export_suspect()
 				return true
@@ -765,7 +749,7 @@ func _install_hud() -> void:
 
 	_hud_layer = CanvasLayer.new()
 	_hud_layer.name = DEV_HUD_LAYER_NAME
-	_hud_layer.layer = 100
+	_hud_layer.layer = 2048
 	add_child(_hud_layer)
 
 	_hud_label = RichTextLabel.new()
@@ -2042,8 +2026,8 @@ func _silence_phone() -> void:
 		_log("PHONE: silenced (stage=%d)" % _deadline_stage_index)
 
 func _set_dev_hud_visible(visible: bool) -> void:
-	if visible and not is_instance_valid(_hud_layer):
-		_install_hud()
+	# Dev HUD is now owned by DevRoot (global autoload).
+	# Keep this method for compatibility with existing callsites, but do not create HUD nodes here.
 
 	if is_instance_valid(_hud_layer):
 		_hud_layer.visible = visible

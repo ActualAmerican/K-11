@@ -18,6 +18,7 @@ config/icon="res://Assets/Image Assets/icon.svg"
 [autoload]
 
 GameController="*res://Scripts/systems/GameController.gd"
+DevRoot="*res://dev/DevRoot.gd"
 
 [display]
 

@@ -17,6 +17,8 @@ func _ready() -> void:
 func open(id: String, payload: Dictionary = {}) -> void:
 	if is_open():
 		close()
+	if id == "DEV_TEST" and not DevGate.ENABLED:
+		return
 
 	current_id = id
 	var root := Control.new()
