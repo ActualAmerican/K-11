@@ -10,7 +10,7 @@
 [ext_resource type="Script" uid="uid://cdnxsp0fy2q5j" path="res://Scripts/ui/DrawerBalanceGauge.gd" id="8"]
 [ext_resource type="Texture2D" uid="uid://cv1dpmy8d0knl" path="res://Assets/Image Assets/IMG_1013.PNG" id="9_ju1od"]
 
-[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_ju1od"]
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_jylbd"]
 bg_color = Color(0.2, 1, 0.2, 0.08)
 border_width_left = 3
 border_width_top = 3
@@ -56,12 +56,12 @@ texture = ExtResource("3_dhoku")
 script = ExtResource("2_track")
 drawer_track_y_at_100_px = 655.0
 
+[node name="Handle" type="Sprite2D" parent="OpenDrawer"]
+position = Vector2(0, 649)
+texture = ExtResource("9_ju1od")
+
 [node name="TableTop" type="Sprite2D" parent="."]
 texture = ExtResource("2_bg")
-
-[node name="ClosedCaseFolder" type="Sprite2D" parent="."]
-visible = false
-texture = ExtResource("4_table_top")
 
 [node name="DropZoneIndicator" type="Panel" parent="."]
 layout_mode = 0
@@ -70,7 +70,7 @@ offset_top = -1046.3201
 offset_right = -60.475006
 offset_bottom = -588.0901
 mouse_filter = 2
-theme_override_styles/panel = SubResource("StyleBoxFlat_ju1od")
+theme_override_styles/panel = SubResource("StyleBoxFlat_jylbd")
 script = ExtResource("6_drop_zone")
 design_rect_px = Rect2(882.945, 328.68, 336.58, 458.23)
 
@@ -90,6 +90,10 @@ grow_vertical = 0
 mouse_filter = 2
 script = ExtResource("8")
 design_rect_px = Rect2(970.65, 1001.805, 480, 153.63)
+
+[node name="ClosedCaseFolder" type="Sprite2D" parent="."]
+visible = false
+texture = ExtResource("4_table_top")
 
 [node name="NoiseMeterPiP" type="Control" parent="."]
 clip_contents = true
@@ -123,7 +127,3 @@ texture_filter = 2
 position = Vector2(280, 190)
 scale = Vector2(2.1875, 2.1875)
 region_rect = Rect2(0, 0, 420, 280)
-
-[node name="Handle" type="Sprite2D" parent="."]
-position = Vector2(0, -6)
-texture = ExtResource("9_ju1od")

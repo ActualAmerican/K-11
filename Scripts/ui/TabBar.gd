@@ -51,7 +51,8 @@ func _select(b: Button, should_emit_signal: bool) -> void:
 	current_tab = tab_name if tab_name != "" else b.text
 
 	if should_emit_signal:
-		print("[K11] TAB -> %s" % current_tab)
+		if DevGate.ENABLED:
+			print("[K11] TAB -> %s" % current_tab)
 		tab_changed.emit(current_tab)
 
 func set_tab(tab_id: String) -> void:

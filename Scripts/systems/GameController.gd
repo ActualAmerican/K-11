@@ -2,7 +2,7 @@ extends Node
 
 
 enum AppState { BOOT, TITLE, MENU, GAME }
-enum RunState { IDLE, OVERLAY, SUSPECT_ACTIVE, VERDICT_PENDING, OUTCOME }
+enum RunState { IDLE, OVERLAY, SUSPECT_ACTIVE, VERDICT_PENDING, INTERMISSION, OUTCOME }
 enum ShotType { VERDICT, OVERFLOW, EXIT_KILLSWITCH, DEV_TEST }
 signal run_event(event_name: String, payload: Dictionary)
 var app_state: int = AppState.BOOT
@@ -157,6 +157,7 @@ const DEV_EVENT_LOG_VISIBLE: int = 12
 const DEV_EVENT_LOG_LINE_HEIGHT: float = 14.0
 const DEV_EVENT_LOG_WIDTH: float = 520.0
 var _event_log_visible_lines: int = DEV_EVENT_LOG_VISIBLE
+var _dev_case_noise_log_index: int = -1
 var _last_toggle_edge_pan_event_id: int = 0
 var _last_force_verdict_event_id: int = 0
 var _seed_prompt_prev_hud_visible: bool = false
@@ -246,7 +247,8 @@ func _process(_delta: float) -> void:
 						_phone_forced = false
 						_log("DEADLINE EXPIRED -> PHONE RINGING")
 		if _noise_sys != null:
-			_noise_sys.tick(_delta)
+			if not _case_handling_live_noise_mode_active:
+				_noise_sys.tick(_delta)
 			_sync_noise_widget(false)
 	if app_state == AppState.GAME and not overlay_open:
 		if _case_folder == null:
@@ -616,14 +618,10 @@ func close_overlay() -> void:
 	else:
 		if _overlay_manager != null:
 			_overlay_manager.call("close")
-	var closed_overlay_id: String = overlay_id
 	overlay_open = false
 	overlay_id = ""
 	_clear_folder_highlight()
-	if closed_overlay_id == "VERDICT_RESULT":
-		set_run_state(RunState.IDLE)
-	else:
-		set_run_state(_run_state_before_overlay)
+	set_run_state(_run_state_before_overlay)
 	_run_state_before_overlay = RunState.IDLE
 	if _overflow_discharge_pending:
 		_overflow_discharge_pending = false
@@ -679,6 +677,14 @@ func _on_app_state_changed(_from_state: int, _to_state: int) -> void:
 		_hide_evidence_overlay()
 		_cache_case_folder()
 		_init_verdict_flow_ui()
+		if overlay_open:
+			pass
+		elif _intermission_active:
+			set_run_state(RunState.INTERMISSION)
+		elif current_suspect != null:
+			set_run_state(RunState.SUSPECT_ACTIVE)
+		else:
+			set_run_state(RunState.IDLE)
 	_apply_state_policy("state")
 
 func _apply_state_policy(reason: String) -> void:
@@ -978,9 +984,9 @@ func _start_intermission_from_verdict() -> void:
 		_init_intermission_system()
 	if _intermission_sys == null:
 		_advance_to_next_suspect()
-		set_run_state(RunState.IDLE)
 		return
 	_log("INTERMISSION: start")
+	set_run_state(RunState.INTERMISSION)
 	_intermission_sys.start_from_verdict()
 
 func _on_intermission_continue() -> void:
@@ -991,14 +997,13 @@ func _on_intermission_continue() -> void:
 func _on_intermission_finished() -> void:
 	_log("INTERMISSION: finished -> next suspect")
 	_advance_to_next_suspect()
-	set_run_state(RunState.IDLE)
 
 func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> void:
 	var carry_noise: int = maxi(_noise_points, 0)
 	if _noise_sys != null:
 		if _case_handling_live_noise_mode_active:
-			# Carry the total noise accrued during case handling (scaled by live sensitivity), not the decayed current meter.
-			carry_noise = maxi(_case_handling_noise_accrued_scaled, 0)
+			# Carry the exact live meter value at file time.
+			carry_noise = clampi(_noise_sys.get_noise(), 0, 100)
 		else:
 			# Fallback path: carry only mini-game noise forward.
 			_noise_sys.start_suspect(0)
@@ -1021,7 +1026,6 @@ func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> v
 	if _computer_screen_window != null and _computer_screen_window.has_method("set_enabled"):
 		_computer_screen_window.call("set_enabled", true)
 	_advance_to_next_suspect()
-	set_run_state(RunState.IDLE)
 	_log("INTERMISSION: filed -> next suspect (carry_noise=%d)" % carry_noise)
 	await _fade_in_case_transition()
 
@@ -1579,7 +1583,7 @@ func _cache_evidence_ui() -> void:
 			_evidence_dimmer.name = "EvidenceDimmer"
 			_evidence_dimmer.color = Color(0, 0, 0, 0.55)
 			_evidence_dimmer.visible = false
-			_evidence_dimmer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_evidence_dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
 			(parent as Control).add_child(_evidence_dimmer)
 			var panel_index: int = (parent as Control).get_children().find(_evidence_panel)
 			if panel_index >= 0:
@@ -1596,6 +1600,7 @@ func _cache_evidence_ui() -> void:
 		_evidence_dimmer.offset_top = 0
 		_evidence_dimmer.offset_right = 0
 		_evidence_dimmer.offset_bottom = 0
+		_evidence_dimmer.mouse_filter = Control.MOUSE_FILTER_STOP
 		_evidence_dimmer.visible = false
 		_evidence_dimmer.z_index = 1999
 
@@ -2136,13 +2141,16 @@ func _on_verdict_pressed(verdict_id: String) -> void:
 
 func _on_verdict_overlay_continued() -> void:
 	close_overlay()
+	var verdict_failed: bool = _pending_run_fail
 	if _punishment_pending:
 		_log("PUNISHMENT: PENDING (revolver later)")
-	if _pending_run_fail:
+	if verdict_failed:
 		_log("OUTCOME: FAIL (wrong verdict) verdict=%s truth=%s" % [_last_verdict, "GUILTY" if _last_truth_guilty else "INNOCENT"])
 		set_run_state(RunState.OUTCOME)
 	_pending_run_fail = false
 	_intermission_active = true
+	if _intermission_active:
+		set_run_state(RunState.INTERMISSION)
 	if _computer_screen_window == null:
 		_cache_computer_screen_window()
 	if _computer_screen_window != null and _computer_screen_window.has_method("set_enabled"):
@@ -2332,10 +2340,21 @@ func _log(msg: String) -> void:
 		return
 	var ticks: int = Time.get_ticks_msec()
 	var line: String = "%s %s" % [str(ticks), msg]
-	print("[K11] %s" % line)
-	_dev_event_log.append(line)
-	if _dev_event_log.size() > DEV_EVENT_LOG_MAX:
-		_dev_event_log = _dev_event_log.slice(_dev_event_log.size() - DEV_EVENT_LOG_MAX, _dev_event_log.size())
+	var is_case_noise_line: bool = msg.find("trigger=case_handling[*]") >= 0
+	if is_case_noise_line:
+		if _dev_case_noise_log_index >= 0 and _dev_case_noise_log_index < _dev_event_log.size():
+			_dev_event_log[_dev_case_noise_log_index] = line
+		else:
+			_dev_event_log.append(line)
+			_dev_case_noise_log_index = _dev_event_log.size() - 1
+	else:
+		print("[K11] %s" % line)
+		_dev_event_log.append(line)
+	var trim_count: int = _dev_event_log.size() - DEV_EVENT_LOG_MAX
+	if trim_count > 0:
+		_dev_event_log = _dev_event_log.slice(trim_count, _dev_event_log.size())
+		if _dev_case_noise_log_index >= 0:
+			_dev_case_noise_log_index = max(-1, _dev_case_noise_log_index - trim_count)
 	_update_event_log_display()
 
 func _update_event_log_display() -> void:
@@ -2585,6 +2604,7 @@ func _run_state_name(s: int) -> String:
 		RunState.OVERLAY: return "OVERLAY"
 		RunState.SUSPECT_ACTIVE: return "SUSPECT_ACTIVE"
 		RunState.VERDICT_PENDING: return "VERDICT_PENDING"
+		RunState.INTERMISSION: return "INTERMISSION"
 		RunState.OUTCOME: return "OUTCOME"
 		_: return "UNKNOWN"
 
@@ -2782,6 +2802,7 @@ func _open_evidence_overlay(tab_id: String) -> void:
 	# Treat as overlay for ESC + camera lock consistency
 	overlay_open = true
 	overlay_id = OVERLAY_EVIDENCE_ID
+	_run_state_before_overlay = run_state
 	set_run_state(RunState.OVERLAY)
 	_set_world_tabs_pickable(false)
 	_set_hud_tabs_enabled(false)
@@ -2947,3 +2968,5 @@ func _refresh_suspect_seed() -> void:
 		_noise_carryover_start_value_next_suspect = -1
 		_sync_noise_widget(true)
 	_reset_verdict_flow()
+	if app_state == AppState.GAME and not overlay_open:
+		set_run_state(RunState.SUSPECT_ACTIVE)

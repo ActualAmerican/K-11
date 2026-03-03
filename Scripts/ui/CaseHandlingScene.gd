@@ -78,7 +78,7 @@ signal finished(success: bool, noise_points: int)
 @onready var open_drawer: Sprite2D = $OpenDrawer
 @onready var table_top: Sprite2D = $TableTop
 @onready var case_file: Sprite2D = $ClosedCaseFolder
-@onready var drawer_handle: Sprite2D = find_child("Handle", true, false) as Sprite2D
+@onready var drawer_handle: Sprite2D = $OpenDrawer/Handle if has_node("OpenDrawer/Handle") else (find_child("Handle", true, false) as Sprite2D)
 @onready var drop_zone_indicator: Control = $DropZoneIndicator
 @onready var balance_gauge: DrawerBalanceGauge = $BalanceGauge
 @onready var noise_meter_pip: Control = $NoiseMeterPiP
@@ -138,6 +138,8 @@ var _pip_last_capture_rect_valid: bool = false
 var _case_noise_cb: Callable = Callable()
 var _case_noise_policy: InterrogationTimePolicy = null
 var _drawer_handle_outline: Sprite2D = null
+var _handle_image: Image = null
+var _handle_image_size: Vector2i = Vector2i.ZERO
 
 func _pip_is_follow_mode() -> bool:
 	return pip_source_mode == PipSourceMode.FOLLOW_TARGET
@@ -163,11 +165,11 @@ func configure_from_payload(payload: Dictionary) -> void:
 func _ready() -> void:
 	if Engine.is_editor_hint():
 		set_process(true)
-		_ensure_runtime_drawer_handle_parenting()
+		_capture_design_layout_once()
 		_ensure_drawer_handle_outline()
 		_setup_live_pip_feed()
+		_update_handle_visual()
 		if editor_preview_runtime_layout:
-			_capture_design_layout_once()
 			_fit_scene_for_size(editor_preview_size)
 			_rebuild_drawer_track()
 			_update_visual_state()
@@ -208,6 +210,7 @@ func _ready() -> void:
 func _process(_delta: float) -> void:
 	if Engine.is_editor_hint():
 		_setup_live_pip_feed()
+		_update_handle_visual()
 		if editor_preview_runtime_layout:
 			_fit_scene_for_size(editor_preview_size)
 			_rebuild_drawer_track()
@@ -335,8 +338,7 @@ func _input(event: InputEvent) -> void:
 			if _is_file_drop_ready() and _get_drop_zone_rect().has_point(mouse_pos):
 				_start_filing_sequence()
 				return
-			var click_target: Sprite2D = drawer_handle if drawer_handle != null else open_drawer
-			if _is_over_sprite(click_target, mouse_pos):
+			if _is_over_handle(mouse_pos):
 				_drag_drawer = true
 				_last_tick_ms = now_ms
 				_balance_begin()
@@ -1001,6 +1003,29 @@ func _is_over_sprite(s: Sprite2D, mouse_pos: Vector2) -> bool:
 		return false
 	return _sprite_global_rect(s).has_point(mouse_pos)
 
+func _is_over_handle(mouse_pos: Vector2) -> bool:
+	if drawer_handle == null or drawer_handle.texture == null:
+		return false
+	var local: Vector2 = drawer_handle.to_local(mouse_pos)
+	var size: Vector2 = drawer_handle.texture.get_size()
+	var rect: Rect2 = Rect2(Vector2.ZERO, size)
+	if drawer_handle.centered:
+		rect.position = -size * 0.5
+	if not rect.has_point(local):
+		return false
+	if _handle_image == null or _handle_image_size == Vector2i.ZERO:
+		_handle_image = drawer_handle.texture.get_image()
+		if _handle_image != null:
+			_handle_image_size = _handle_image.get_size()
+	if _handle_image == null or _handle_image_size == Vector2i.ZERO:
+		return true
+	var uv: Vector2 = local - rect.position
+	var ix: int = int(floor(uv.x))
+	var iy: int = int(floor(uv.y))
+	if ix < 0 or iy < 0 or ix >= _handle_image_size.x or iy >= _handle_image_size.y:
+		return false
+	return _handle_image.get_pixel(ix, iy).a > 0.05
+
 func _fit_scene_to_viewport() -> void:
 	_fit_scene_for_size(get_viewport_rect().size)
 
@@ -1035,9 +1060,10 @@ func _fit_scene_for_size(vp_size: Vector2) -> void:
 		case_file.scale = Vector2.ONE * scale_cover
 	if drawer_handle != null:
 		drawer_handle.centered = true
-		drawer_handle.position = center + ((_handle_design_pos - _background_design_pos) * scale_cover)
-		drawer_handle.scale = _handle_design_scale * scale_cover
-		drawer_handle.rotation = _handle_design_rot
+		if not (open_drawer != null and drawer_handle.get_parent() == open_drawer):
+			drawer_handle.position = center + ((_handle_design_pos - _background_design_pos) * scale_cover)
+			drawer_handle.scale = _handle_design_scale * scale_cover
+			drawer_handle.rotation = _handle_design_rot
 	_update_handle_visual()
 	_refresh_drop_zone_indicator()
 
@@ -1053,11 +1079,19 @@ func _capture_design_layout_once() -> void:
 	if case_file != null:
 		_case_file_design_pos = case_file.position
 	if drawer_handle != null:
-		_handle_design_pos = drawer_handle.position
+		if open_drawer != null and drawer_handle.get_parent() == open_drawer:
+			_handle_drawer_offset_design = drawer_handle.position
+			_handle_design_pos = open_drawer.position + drawer_handle.position
+		else:
+			_handle_design_pos = drawer_handle.position
+			if open_drawer != null:
+				_handle_drawer_offset_design = drawer_handle.position - open_drawer.position
 		_handle_design_scale = drawer_handle.scale
 		_handle_design_rot = drawer_handle.rotation
-		if open_drawer != null:
-			_handle_drawer_offset_design = drawer_handle.position - open_drawer.position
+		if drawer_handle.texture != null:
+			_handle_image = drawer_handle.texture.get_image()
+			if _handle_image != null:
+				_handle_image_size = _handle_image.get_size()
 	_layout_captured = true
 
 func _apply_layer_order() -> void:
@@ -1263,19 +1297,20 @@ func _complete_filing_sequence() -> void:
 	queue_free()
 
 func _ensure_runtime_drawer_handle_parenting() -> void:
-	if drawer_handle == null:
+	if Engine.is_editor_hint():
 		return
-	if drawer_handle.get_parent() == self:
+	if drawer_handle == null or open_drawer == null:
 		return
-	# If the authored handle was placed under the PiP container (or any other branch),
-	# move it to the scene root so it can overlay the real drawer and balance gauge.
+	if drawer_handle.get_parent() == open_drawer:
+		return
+	# Keep the authored handle in the drawer branch so it tracks drawer movement/rotation in lockstep.
 	var gpos: Vector2 = drawer_handle.global_position
 	var grot: float = drawer_handle.global_rotation
 	var gscl: Vector2 = drawer_handle.global_scale
 	var old_parent: Node = drawer_handle.get_parent()
 	if old_parent != null:
 		old_parent.remove_child(drawer_handle)
-	add_child(drawer_handle)
+	open_drawer.add_child(drawer_handle)
 	drawer_handle.owner = null if Engine.is_editor_hint() else drawer_handle.owner
 	drawer_handle.global_position = gpos
 	drawer_handle.global_rotation = grot
@@ -1308,13 +1343,16 @@ func _ensure_drawer_handle_outline() -> void:
 func _update_handle_visual() -> void:
 	if drawer_handle == null:
 		return
-	if open_drawer != null and drawer_handle.get_parent() == self:
-		var sx: float = absf(open_drawer.scale.x)
-		var sy: float = absf(open_drawer.scale.y)
-		var off: Vector2 = Vector2(_handle_drawer_offset_design.x * sx, _handle_drawer_offset_design.y * sy)
-		drawer_handle.position = open_drawer.position + off.rotated(open_drawer.rotation)
-		drawer_handle.rotation = open_drawer.rotation + _handle_design_rot
-		drawer_handle.scale = Vector2(_handle_design_scale.x * sx, _handle_design_scale.y * sy)
+	if open_drawer != null:
+		if drawer_handle.get_parent() == open_drawer:
+			pass
+		else:
+			var sx: float = absf(open_drawer.scale.x)
+			var sy: float = absf(open_drawer.scale.y)
+			var off: Vector2 = Vector2(_handle_drawer_offset_design.x * sx, _handle_drawer_offset_design.y * sy)
+			drawer_handle.position = open_drawer.position + off.rotated(open_drawer.rotation)
+			drawer_handle.rotation = open_drawer.rotation + _handle_design_rot
+			drawer_handle.scale = Vector2(_handle_design_scale.x * sx, _handle_design_scale.y * sy)
 	drawer_handle.modulate = Color(1, 1, 1, 1)
 	if _drawer_handle_outline != null and is_instance_valid(_drawer_handle_outline):
 		_drawer_handle_outline.texture = drawer_handle.texture

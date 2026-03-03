@@ -55,7 +55,8 @@ func _set_active_tab(tab_name: String) -> void:
 		var highlight: Polygon2D = _highlights.get(tab) as Polygon2D
 		if highlight != null:
 			highlight.visible = _tab_name(tab) == tab_name
-	print("[K11] TAB -> %s" % tab_name)
+	if DevGate.ENABLED:
+		print("[K11] TAB -> %s" % tab_name)
 
 
 func _sync_highlight_polygon(tab: Area2D, poly: Polygon2D) -> void:

@@ -50,6 +50,14 @@ var _dev_log_enabled: bool = false
 var _dev_log_cb: Callable = Callable()
 var _dev_events: Array[Dictionary] = []
 const DEV_LOG_MAX: int = 50
+const DEV_CASE_LOG_THROTTLE_MS := 250
+var _dev_case_pending_delta: int = 0
+var _dev_case_pending_count: int = 0
+var _dev_case_pending_before: int = 0
+var _dev_case_pending_after: int = 0
+var _dev_case_pending_last_trigger: String = ""
+var _dev_case_pending_last_meta: Dictionary = {}
+var _dev_case_last_emit_msec: int = 0
 var _context_meta: Dictionary = {}
 var _sensitivity: float = 1.0
 
@@ -80,6 +88,13 @@ func reset_run() -> void:
 	_phone_ring_timer_s = 0.0
 	_phone_ring_interval_s = PHONE_RING_INTERVAL_START_S
 	_phone_hiss_accum = 0.0
+	_dev_case_pending_delta = 0
+	_dev_case_pending_count = 0
+	_dev_case_pending_before = 0
+	_dev_case_pending_after = 0
+	_dev_case_pending_last_trigger = ""
+	_dev_case_pending_last_meta = {}
+	_dev_case_last_emit_msec = 0
 	_set_band(_band_for_noise(noise_i))
 	_reset_sensitivity()
 
@@ -186,6 +201,9 @@ func apply_trigger(id: StringName, meta: Dictionary = {}) -> void:
 func _dev_log_event(trigger_id: String, delta: int, before: int, after: int, meta: Dictionary) -> void:
 	if not _dev_log_enabled:
 		return
+	if trigger_id.begins_with("case_handling:"):
+		_dev_log_case_handling(trigger_id, delta, before, after, meta)
+		return
 	var line := "NOISE +%d (%d->%d) trigger=%s meta=%s" % [delta, before, after, trigger_id, str(meta)]
 	_dev_events.append({
 		"trigger": trigger_id,
@@ -199,6 +217,85 @@ func _dev_log_event(trigger_id: String, delta: int, before: int, after: int, met
 		_dev_events.pop_front()
 	if not _dev_log_cb.is_null():
 		_dev_log_cb.call(line)
+
+func _dev_log_case_handling(trigger_id: String, delta: int, before: int, after: int, meta: Dictionary) -> void:
+	var now_msec: int = Time.get_ticks_msec()
+
+	if _dev_case_pending_count <= 0:
+		_dev_case_pending_before = before
+		_dev_case_pending_after = after
+	else:
+		_dev_case_pending_after = after
+	_dev_case_pending_delta += delta
+	_dev_case_pending_count += 1
+	_dev_case_pending_last_trigger = trigger_id
+	_dev_case_pending_last_meta = meta
+
+	var can_merge_last: bool = false
+	if _dev_events.size() > 0:
+		var last_event: Dictionary = _dev_events[_dev_events.size() - 1]
+		if bool(last_event.get("coalesced_case_handling", false)):
+			var last_time: int = int(last_event.get("time_msec", 0))
+			if now_msec - last_time <= DEV_CASE_LOG_THROTTLE_MS:
+				can_merge_last = true
+
+	if can_merge_last:
+		var merged: Dictionary = _dev_events[_dev_events.size() - 1]
+		merged["trigger"] = "case_handling[*]"
+		merged["delta"] = _dev_case_pending_delta
+		merged["before"] = _dev_case_pending_before
+		merged["after"] = _dev_case_pending_after
+		merged["count"] = _dev_case_pending_count
+		merged["last_trigger"] = _dev_case_pending_last_trigger
+		merged["meta"] = _dev_case_pending_last_meta
+		merged["time_msec"] = now_msec
+		merged["coalesced_case_handling"] = true
+		_dev_events[_dev_events.size() - 1] = merged
+	else:
+		_dev_events.append({
+			"trigger": "case_handling[*]",
+			"delta": _dev_case_pending_delta,
+			"before": _dev_case_pending_before,
+			"after": _dev_case_pending_after,
+			"count": _dev_case_pending_count,
+			"last_trigger": _dev_case_pending_last_trigger,
+			"meta": _dev_case_pending_last_meta,
+			"time_msec": now_msec,
+			"coalesced_case_handling": true
+		})
+
+	while _dev_events.size() > DEV_LOG_MAX:
+		_dev_events.pop_front()
+
+	if _dev_log_cb.is_null():
+		return
+
+	if _dev_case_last_emit_msec > 0 and (now_msec - _dev_case_last_emit_msec) < DEV_CASE_LOG_THROTTLE_MS:
+		return
+
+	var reason: String = _dev_case_pending_last_trigger
+	if reason.begins_with("case_handling:"):
+		reason = reason.substr("case_handling:".length())
+
+	var line := "NOISE +%d (%d->%d) trigger=case_handling[*] x%d last=%s" % [
+		_dev_case_pending_delta,
+		_dev_case_pending_before,
+		_dev_case_pending_after,
+		_dev_case_pending_count,
+		reason
+	]
+	if _dev_case_pending_last_meta.has("sensitivity"):
+		line += " sens=%s" % str(_dev_case_pending_last_meta.get("sensitivity"))
+	if _dev_case_pending_last_meta.has("raw_amount"):
+		line += " raw=%s" % str(_dev_case_pending_last_meta.get("raw_amount"))
+	if _dev_case_pending_last_meta.has("base_delta"):
+		line += " base=%s" % str(_dev_case_pending_last_meta.get("base_delta"))
+
+	_dev_log_cb.call(line)
+	_dev_case_last_emit_msec = now_msec
+	_dev_case_pending_delta = 0
+	_dev_case_pending_count = 0
+	_dev_case_pending_before = _dev_case_pending_after
 
 func get_dev_events() -> Array[Dictionary]:
 	return _dev_events
