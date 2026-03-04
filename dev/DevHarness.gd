@@ -10,11 +10,16 @@ var hud_visible := true
 var _hud_refresh_accum: float = 0.0
 var _last_toggle_edge_pan_event_id: int = 0
 var _last_force_verdict_event_id: int = 0
+var _suite: DevSuite = null
 
 func attach(p_controller: Node) -> void:
 	controller = p_controller
 	if controller == null:
 		return
+	if DevGate.ENABLED:
+		if _suite == null:
+			_suite = DevSuite.new()
+		_suite.attach(controller, Callable(self, "_log"))
 	_safe_call("._install_hud")
 	_mount_hud_globally()
 	_safe_call("._install_seed_prompt")
@@ -52,6 +57,25 @@ func tick(_delta: float) -> void:
 func handle_input(event: InputEvent) -> bool:
 	if controller == null or event == null:
 		return false
+
+	if DevGate.ENABLED and event is InputEventKey:
+		var k: InputEventKey = event as InputEventKey
+		if k != null and k.pressed and not k.echo and k.ctrl_pressed and k.shift_pressed:
+			var is_suite_hotkey: bool = k.keycode == KEY_BACKSPACE or k.keycode == KEY_U
+			if is_suite_hotkey:
+				var app_state: int = int(controller.get("app_state"))
+				var overlay_id: String = str(controller.get("overlay_id"))
+				var allow_suite: bool = app_state != 3 or overlay_id == "END_CARD" or overlay_id == "GAME_OVER"
+				if not allow_suite:
+					return false
+			if k.keycode == KEY_BACKSPACE:
+				if _suite != null:
+					_suite.factory_reset_arm_or_execute()
+				return true
+			if k.keycode == KEY_U:
+				if _suite != null:
+					_suite.grant_all_unlocks()
+				return true
 
 	if _c_bool("dev_allow_escape_hatch") and event.is_action_pressed("ui_cancel"):
 		if _c_bool("overlay_open"):

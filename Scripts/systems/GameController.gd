@@ -25,6 +25,13 @@ var _clock: GameClock = null
 var _phone: PhoneSystem = null
 var _alarm_sys: AlarmSystem = null
 var _intermission_sys: IntermissionSystem = null
+var _run_ledger: RunLedger = null
+var _ledger_force_new_run: bool = false
+var _ledger_case_active: bool = false
+var _ledger_noise_start: int = 0
+var _ledger_noise_peak: int = 0
+var _ledger_rev_start: Dictionary = {}
+var _ledger_phone_rings_start: int = 0
 var _alarm_flash: CanvasItem = null
 var _breach_active: bool = false
 var _deadline_total_s: float = 0.0
@@ -38,6 +45,9 @@ var _phone_forced: bool = false
 var _tick_1hz_accum: float = 0.0
 var _clock_rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _game_over_active: bool = false
+var _run_finished: bool = false
+var _run_end_outcome: String = ""
+var _run_noise_peak: int = 0
 var _clock_rate_game: float = 1.0
 var _clock_rate_intermission: float = 0.0166667
 var suspect_index: int = 0
@@ -221,7 +231,7 @@ func _process(_delta: float) -> void:
 			_log("SEED OVERRIDE -> %s" % forced_seed_text)
 			_init_seed()
 			_reset_run_state()
-	if app_state == AppState.GAME:
+	if app_state == AppState.GAME and not _run_finished:
 		if _phone != null and not _breach_active:
 			_phone.tick(_delta)
 		if _alarm_sys != null:
@@ -250,7 +260,7 @@ func _process(_delta: float) -> void:
 			if not _case_handling_live_noise_mode_active:
 				_noise_sys.tick(_delta)
 			_sync_noise_widget(false)
-	if app_state == AppState.GAME and not overlay_open:
+	if app_state == AppState.GAME and not overlay_open and not _run_finished:
 		if _case_folder == null:
 			_cache_case_folder()
 		if _phone_node == null:
@@ -303,6 +313,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 
 	if app_state != AppState.GAME:
+		return
+	if _run_finished:
 		return
 	if overlay_open:
 		return
@@ -668,6 +680,174 @@ func set_run_state(new_state: int) -> void:
 	if dev_log_state_changes:
 		_log("RUN -> %s" % _run_state_name(run_state))
 
+func _collect_end_stats() -> Dictionary:
+	var noise_now: int = _noise_sys.get_noise() if _noise_sys != null else 0
+	var noise_label: Variant = "%d (peak %d)" % [noise_now, _run_noise_peak]
+
+	var danger_tier: int = _revolver_sys.danger if _revolver_sys != null else 0
+	var danger_fill: int = _revolver_sys.danger_fill if _revolver_sys != null else 0
+	var danger_label: Variant = "%d (%d/100)" % [danger_tier, danger_fill]
+
+	var pulls_used: int = _bitcount(_revolver_sys.consumed_mask) if _revolver_sys != null else 0
+
+	return {
+		"suspects_cleared": int(suspect_index),
+		"noise": noise_label,
+		"danger": danger_label,
+		"revolver_pulls_used": pulls_used,
+		"phone_rings": (_phone.ring_count if _phone != null else 0),
+	}
+
+func _end_run(outcome: String, title: String, reason: String, meta: Dictionary = {}) -> void:
+	if _run_finished:
+		return
+
+	_run_finished = true
+	_run_end_outcome = outcome
+	_game_over_active = true
+
+	_breach_active = false
+	_deadline_active = false
+	_deadline_expired = false
+	_phone_forced = false
+
+	if _phone != null:
+		_phone.stop()
+	if _alarm_sys != null:
+		_alarm_sys.stop({"reason": "run_end", "outcome": outcome})
+
+	if overlay_open:
+		close_overlay()
+
+	var stats: Dictionary = _collect_end_stats()
+	var payload: Dictionary = {
+		"title": title,
+		"reason": reason,
+	}
+	for k in stats.keys():
+		payload[k] = stats[k]
+	if meta.size() > 0:
+		payload["meta"] = meta
+
+	open_overlay("END_CARD", payload)
+
+func _ensure_run_ledger_started() -> void:
+	if _run_ledger == null:
+		_run_ledger = preload("res://Scripts/systems/RunLedger.gd").new()
+		_run_ledger.load()
+
+	var need_new: bool = _ledger_force_new_run
+	_ledger_force_new_run = false
+
+	if not need_new:
+		if _run_ledger.active_run_index >= 0 and _run_ledger.active_run_index < _run_ledger.runs.size():
+			var r: Dictionary = _run_ledger.runs[_run_ledger.active_run_index]
+			if str(r.get("outcome", "")) == "IN_PROGRESS" and str(r.get("seed_text", "")) == run_seed_text:
+				need_new = false
+			else:
+				need_new = true
+		else:
+			need_new = true
+
+	if need_new:
+		_run_ledger.start_run(run_seed_text, run_seed_u64, {"phase": "3.6"})
+		_run_ledger.save()
+
+func _bitcount(v_in: int) -> int:
+	var v: int = v_in
+	var c: int = 0
+	while v != 0:
+		c += (v & 1)
+		v = v >> 1
+	return c
+
+func _ledger_begin_case_if_needed() -> void:
+	if _ledger_case_active:
+		return
+	if current_suspect == null:
+		return
+	if app_state != AppState.GAME:
+		return
+	if overlay_open:
+		return
+
+	_ensure_run_ledger_started()
+	_ledger_case_active = true
+
+	_ledger_noise_start = _noise_sys.get_noise() if _noise_sys != null else 0
+	_ledger_noise_peak = _ledger_noise_start
+	_ledger_rev_start = _revolver_sys.snapshot() if _revolver_sys != null else {}
+	_ledger_phone_rings_start = _phone.ring_count if _phone != null else 0
+
+	_run_ledger.start_case(
+		current_suspect,
+		suspect_seed_text,
+		suspect_index,
+		{"suspect_id": current_suspect.short_id()}
+	)
+	_run_ledger.save()
+
+	_log("RUN_CASE BEGIN idx=%d seed=%s id=%s" % [suspect_index, suspect_seed_text, current_suspect.short_id()])
+
+func _ledger_end_case_if_active(outcome: String, carry_noise_next: int) -> void:
+	if not _ledger_case_active:
+		return
+	if _run_ledger == null:
+		return
+
+	var noise_end: int = _noise_sys.get_noise() if _noise_sys != null else 0
+	var rev_end: Dictionary = _revolver_sys.snapshot() if _revolver_sys != null else _ledger_rev_start
+
+	var start_consumed: int = int(_ledger_rev_start.get("consumed_mask", 0))
+	var end_consumed: int = int(rev_end.get("consumed_mask", start_consumed))
+
+	var pulls_start: int = _bitcount(start_consumed)
+	var pulls_end: int = _bitcount(end_consumed)
+
+	var clock_hhmm: String = ""
+	if _clock != null:
+		clock_hhmm = _clock.format_hhmm(_clock.get_clock_minutes_int())
+
+	var phone_rings: int = 0
+	if _phone != null:
+		phone_rings = maxi(_phone.ring_count - _ledger_phone_rings_start, 0)
+
+	var metrics := {
+		"noise_start": _ledger_noise_start,
+		"noise_end": noise_end,
+		"noise_peak": _ledger_noise_peak,
+		"danger_tier_start": int(_ledger_rev_start.get("danger", 0)),
+		"danger_tier_end": int(rev_end.get("danger", 0)),
+		"danger_fill_start": int(_ledger_rev_start.get("danger_fill", 0)),
+		"danger_fill_end": int(rev_end.get("danger_fill", 0)),
+		"revolver_pulls_used_start": pulls_start,
+		"revolver_pulls_used_end": pulls_end,
+		"phone_rings": phone_rings,
+		"deadline_s": current_suspect.deadline_s if current_suspect != null else 0,
+		"clock_hhmm": clock_hhmm,
+	}
+
+	_run_ledger.finish_case(
+		outcome,
+		_verdict_choice,
+		_last_verdict_correct,
+		carry_noise_next,
+		metrics
+	)
+	_run_ledger.save()
+
+	_log("RUN_CASE END idx=%d verdict=%s correct=%s noise_peak=%d carry_noise=%d danger_end=%d pulls_used=%d" % [
+		suspect_index,
+		_verdict_choice,
+		str(_last_verdict_correct),
+		_ledger_noise_peak,
+		carry_noise_next,
+		int(rev_end.get("danger", 0)),
+		pulls_end
+	])
+
+	_ledger_case_active = false
+
 func _on_app_state_changed(_from_state: int, _to_state: int) -> void:
 	if overlay_open:
 		close_overlay()
@@ -685,6 +865,7 @@ func _on_app_state_changed(_from_state: int, _to_state: int) -> void:
 			set_run_state(RunState.SUSPECT_ACTIVE)
 		else:
 			set_run_state(RunState.IDLE)
+		_ledger_begin_case_if_needed()
 	_apply_state_policy("state")
 
 func _apply_state_policy(reason: String) -> void:
@@ -1004,7 +1185,8 @@ func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> v
 		if _case_handling_live_noise_mode_active:
 			# Carry the exact live meter value at file time.
 			carry_noise = clampi(_noise_sys.get_noise(), 0, 100)
-		else:
+		_ledger_end_case_if_active("FILED", carry_noise)
+		if not _case_handling_live_noise_mode_active:
 			# Fallback path: carry only mini-game noise forward.
 			_noise_sys.start_suspect(0)
 			if carry_noise > 0:
@@ -1016,7 +1198,9 @@ func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> v
 		_noise_sys.start_suspect(0)
 		_sync_noise_widget(true)
 	else:
+		_ledger_end_case_if_active("FILED", carry_noise)
 		_show_case_transition_black()
+
 	_case_handling_live_noise_mode_active = false
 	_case_handling_noise_accrued_scaled = 0
 	close_overlay()
@@ -1202,6 +1386,9 @@ func _sync_noise_widget(immediate: bool) -> void:
 		_noise_widget.call("set_noise_value", _noise_sys.get_noise(), immediate)
 
 func _on_noise_changed(_before: int, _after: int, _reason: String, _meta: Dictionary) -> void:
+	_run_noise_peak = maxi(_run_noise_peak, _after)
+	if _ledger_case_active:
+		_ledger_noise_peak = maxi(_ledger_noise_peak, _after)
 	_sync_noise_widget(false)
 
 func _on_noise_alarm(v: int) -> void:
@@ -1238,11 +1425,11 @@ func _on_noise_breach_resolved(success: bool, meta: Dictionary) -> void:
 func _on_alarm_timed_out(meta: Dictionary) -> void:
 	if _game_over_active:
 		return
-	_game_over_active = true
-	_breach_active = false
-	if overlay_open:
-		close_overlay()
-	open_overlay("GAME_OVER", {"reason": "Killed by Noise Breach", "meta": meta})
+	_ledger_end_case_if_active("DEAD_BREACH", 0)
+	_ensure_run_ledger_started()
+	_run_ledger.finish_run("DEAD_BREACH", {"meta": meta})
+	_run_ledger.save()
+	_end_run("DEAD_BREACH", "GAME OVER", "Killed by Noise Breach", meta)
 	_emit_run_event("noise_breach_timeout", meta)
 	_log("NOISE BREACH TIMEOUT -> GAME OVER")
 
@@ -1810,20 +1997,11 @@ func _open_vent_exit_overlay() -> void:
 	open_overlay("VENT_EXIT", {})
 
 func request_exit_protocol_success() -> void:
-	if overlay_open:
-		close_overlay()
-	var noise_v: Variant = get("_noise_value")
-	var danger_v: Variant = get("_danger_points")
-	var pulls_v: Variant = get("_revolver_pulls_used")
-	var payload: Dictionary = {
-		"title": "ESCAPED",
-		"reason": "Exit Protocol (stub)",
-		"suspects_cleared": int(suspect_index),
-		"noise": noise_v if noise_v != null else "?",
-		"danger": danger_v if danger_v != null else "?",
-		"revolver_pulls_used": pulls_v if pulls_v != null else "?",
-	}
-	open_overlay("END_CARD", payload)
+	_ledger_end_case_if_active("ESCAPED", 0)
+	_ensure_run_ledger_started()
+	_run_ledger.finish_run("ESCAPED")
+	_run_ledger.save()
+	_end_run("ESCAPED", "ESCAPED", "Exit Protocol (stub)")
 
 func _is_mouse_over_computer(mouse_world: Vector2) -> bool:
 	if _computer_node == null or _computer_node.texture == null:
@@ -2631,6 +2809,14 @@ func _apply_overlay_lock(is_open: bool) -> void:
 			cam.call("set_overlay_open", is_open)
 
 func _reset_run_state() -> void:
+	_run_finished = false
+	_run_end_outcome = ""
+	_run_noise_peak = 0
+	if _run_ledger != null:
+		_run_ledger.finish_run("RESTART")
+		_run_ledger.save()
+	_ledger_force_new_run = true
+	_ledger_case_active = false
 	if overlay_open:
 		close_overlay()
 	run_state = RunState.IDLE
@@ -2970,3 +3156,4 @@ func _refresh_suspect_seed() -> void:
 	_reset_verdict_flow()
 	if app_state == AppState.GAME and not overlay_open:
 		set_run_state(RunState.SUSPECT_ACTIVE)
+	_ledger_begin_case_if_needed()

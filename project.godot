@@ -28,7 +28,7 @@ window/stretch/mode="canvas_items"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/pip_author_preview/plugin.cfg")
+enabled=PackedStringArray("res://addons/k11_creation_suite/plugin.cfg", "res://addons/pip_author_preview/plugin.cfg")
 
 [input]
 
