@@ -51,11 +51,21 @@ func _on_NextBtn_pressed() -> void:
 func _generate(advance_index: bool) -> void:
 	var run_seed_text := SeedEdit.text.strip_edges()
 	if run_seed_text == "":
-		run_seed_text = "K11RUN-DEV"
+		run_seed_text = "K11-DEV"
 
-	var run_seed_u64: int = SeedUtil.parse_k11_seed_to_u63(run_seed_text)
+	var run_seed_u64: int = SeedUtil.parse_run_seed_to_u63(run_seed_text)
 	if run_seed_u64 < 0:
-		run_seed_u64 = SeedUtil.derive_seed(0, run_seed_text, 0)
+		_last_payload = {
+			"ok": false,
+			"error": "BAD_SEED",
+			"run_seed_text": run_seed_text,
+		}
+		_refresh_ui({
+			"level": "REJECT",
+			"items": [{"level":"REJECT", "code":"BAD_SEED", "msg":"Invalid seed text."}]
+		}, JSON.stringify(_last_payload, "\t", true))
+		return
+	run_seed_text = SeedUtil.format_run_seed_u63(run_seed_u64)
 
 	var idx: int = int(IndexSpin.value)
 	var rr: int = int(RerollSpin.value)
@@ -104,7 +114,7 @@ func _on_ExportBtn_pressed() -> void:
 		return
 	var dir := "user://case_engine_lab/"
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
-	var seed_txt: String = str(_last_payload.get("run_seed_text", "K11RUN-DEV"))
+		var seed_txt: String = str(_last_payload.get("run_seed_text", "K11-DEV"))
 	var sidx: String = str(_last_payload.get("suspect_index", 0))
 	var rr: String = str(_last_payload.get("reroll_index", 0))
 	var fp: String = str(_last_payload.get("fingerprint", ""))

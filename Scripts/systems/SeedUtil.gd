@@ -45,6 +45,12 @@ static func derive_seed(base_seed_u64: int, label: String, index: int = 0) -> in
 	var x := (base_seed_u64 ^ h ^ int(index)) & 0x7fffffffffffffff
 	return normalize_seed(_splitmix64(x))
 
+static func format_run_seed_u63(seed_u64: int) -> String:
+	return "K11-%s" % _to_base36(normalize_seed(seed_u64))
+
+static func format_suspect_seed_u64(seed_u64: int) -> String:
+	return "K11S-%s" % hex16(normalize_seed(seed_u64))
+
 static func hex16(v: int) -> String:
 	var hex_chars: String = "0123456789abcdef"
 	var out: String = ""
@@ -70,7 +76,7 @@ static func _fnv1a64(s: String) -> int:
 		hash64 = hash64 * prime
 	return hash64
 
-static func parse_k11_seed_to_u63(seed_text: String) -> int:
+static func parse_run_seed_to_u63(seed_text: String) -> int:
 	var text: String = seed_text.strip_edges()
 	if text == "":
 		return -1
@@ -107,6 +113,9 @@ static func parse_k11_seed_to_u63(seed_text: String) -> int:
 
 	return -1
 
+static func parse_k11_seed_to_u63(seed_text: String) -> int:
+	return parse_run_seed_to_u63(seed_text)
+
 static func _is_base36(s: String) -> bool:
 	if s == "":
 		return false
@@ -131,3 +140,15 @@ static func _from_base36(s: String) -> int:
 			return -1
 		v = (v * 36) + idx
 	return v
+
+static func _to_base36(v: int) -> String:
+	var value: int = normalize_seed(v)
+	if value == 0:
+		return "0"
+	var chars: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	var result: String = ""
+	while value > 0:
+		var idx: int = value % 36
+		result = chars[idx] + result
+		value = int(value / 36)
+	return result

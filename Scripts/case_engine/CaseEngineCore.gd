@@ -13,7 +13,20 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 	})
 
 	var core_seed: int = SeedUtil.derive_seed(run_seed_u64, "case_engine_core", suspect_index * 1000 + reroll_index)
+	var suspect_seed: int = SeedUtil.derive_seed(run_seed_u64, "suspect", suspect_index)
 	var rng: RandomNumberGenerator = SeedUtil.make_rng(core_seed)
+	var seed_trace: Dictionary = {
+		"run_seed_text": SeedUtil.format_run_seed_u63(run_seed_u64),
+		"run_seed_input_text": run_seed_text,
+		"run_seed_u64_hex": SeedUtil.hex16(run_seed_u64),
+		"suspect_index": suspect_index,
+		"reroll_index": reroll_index,
+		"suspect_seed_u64_hex": SeedUtil.hex16(suspect_seed),
+		"core_seed_u64_hex": SeedUtil.hex16(core_seed),
+		"named_subseeds": {
+			"case_engine_core": SeedUtil.hex16(core_seed),
+		},
+	}
 	fail_stage = "AUTHORING_CONTRACT"
 	var authoring_errors: Array[String] = _run_authoring_self_check()
 	_trace_push(gen_trace, "AUTHORING_CONTRACT", {
@@ -48,6 +61,7 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 		"twist_tags": [],
 		"facts": {}
 	}
+	truth_bundle["seed_trace"] = seed_trace.duplicate(true)
 	_trace_push(gen_trace, "TRUTH_BUNDLE", {
 		"crime_family": crime_family,
 		"crime_type": crime_type,
@@ -259,6 +273,13 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 	var suspect: SuspectData = SuspectFactory.generate(run_seed_u64, run_seed_text, suspect_index)
 	if suspect == null:
 		return _gen_fail_stage(fail_stage, "NULL_SUSPECT_FACTORY_RESULT", {}, gen_trace)
+	var suspect_seed_trace: Dictionary = suspect.debug.get("seed_trace", {}) as Dictionary
+	var unified_named_subseeds: Dictionary = {}
+	var suspect_named_subseeds: Dictionary = suspect_seed_trace.get("named_subseeds", {}) as Dictionary
+	for seed_name in _sorted_dictionary_keys(suspect_named_subseeds):
+		unified_named_subseeds[seed_name] = str(suspect_named_subseeds.get(seed_name, ""))
+	unified_named_subseeds["case_engine_core"] = SeedUtil.hex16(core_seed)
+	seed_trace["named_subseeds"] = unified_named_subseeds
 
 	# Truth-first content shaping in debug payload while keeping existing suspect structure.
 	suspect.truth_guilty = guilt_state == "GUILTY" or guilt_state == "COMPLICIT"
@@ -278,6 +299,12 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 			gen_trace
 		)
 	suspect.tabs = tab_build.get("tabs", {}) as Dictionary
+	var tab_pool_seed_trace: Dictionary = tab_build.get("tab_pool_seed_trace", {}) as Dictionary
+	for tab_id in _sorted_dictionary_keys(tab_pool_seed_trace):
+		unified_named_subseeds["case_engine_tab_pool:%s" % tab_id] = str(tab_pool_seed_trace.get(tab_id, ""))
+	seed_trace["named_subseeds"] = unified_named_subseeds
+	truth_bundle["seed_trace"] = seed_trace.duplicate(true)
+	suspect.debug["seed_trace"] = seed_trace.duplicate(true)
 
 	fail_stage = "CHARGE_SHEET"
 	suspect.charge_sheet = _build_charge_sheet(suspect, truth_bundle, reroll_index)
@@ -298,6 +325,7 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 		"ok": true,
 		"suspect": suspect_dict,
 		"truth_bundle": truth_bundle,
+		"seed_trace": seed_trace,
 		"gen_trace": gen_trace,
 		"conflict_groups": conflict_groups,
 	}
@@ -465,10 +493,12 @@ static func _build_tabs(rng: RandomNumberGenerator, truth_bundle: Dictionary, sk
 		"groups": conflict_groups_summary,
 	})
 	_trace_push(gen_trace, "VALIDATION_SALVAGE", merged_salvage_audit)
+	var tab_pool_seed_trace: Dictionary = _case_engine_tab_pool_seed_trace(run_seed_u64, suspect_index, reroll_index)
 
 	return {
 		"ok": true,
-		"tabs": _bucket_atoms_into_tabs(rng, atoms),
+		"tabs": _bucket_atoms_into_tabs(atoms, run_seed_u64, suspect_index, reroll_index),
+		"tab_pool_seed_trace": tab_pool_seed_trace,
 	}
 
 static func _materialize_atom(rng: RandomNumberGenerator, templates: Dictionary, truth_bundle: Dictionary, spec: Dictionary, seq: int) -> Dictionary:
@@ -554,7 +584,7 @@ static func _apply_conflict_seeds(atoms: Array[Dictionary], skeleton: Dictionary
 		(atoms[left_idx] as Dictionary)["conflict_group"] = group
 		(atoms[right_idx] as Dictionary)["conflict_group"] = group
 
-static func _bucket_atoms_into_tabs(rng: RandomNumberGenerator, atoms: Array[Dictionary]) -> Dictionary:
+static func _bucket_atoms_into_tabs(atoms: Array[Dictionary], run_seed_u64: int, suspect_index: int, reroll_index: int) -> Dictionary:
 	var tabs: Dictionary = {}
 	var tab_order: Array[String] = [
 		CaseEngineTypes.TAB_ALIBI,
@@ -566,7 +596,7 @@ static func _bucket_atoms_into_tabs(rng: RandomNumberGenerator, atoms: Array[Dic
 	for tab in tab_order:
 		tabs[tab] = {
 			"tab": tab,
-			"fact_pool_seed_u64": SeedUtil.derive_seed(int(rng.seed), tab, atoms.size()),
+			"fact_pool_seed_u64": _case_engine_tab_pool_seed_value(run_seed_u64, suspect_index, reroll_index, tab),
 			"facts": [],
 		}
 	for atom in atoms:
@@ -574,7 +604,7 @@ static func _bucket_atoms_into_tabs(rng: RandomNumberGenerator, atoms: Array[Dic
 		if not tabs.has(tab):
 			tabs[tab] = {
 				"tab": tab,
-				"fact_pool_seed_u64": SeedUtil.derive_seed(int(rng.seed), tab, atoms.size()),
+				"fact_pool_seed_u64": _case_engine_tab_pool_seed_value(run_seed_u64, suspect_index, reroll_index, tab),
 				"facts": [],
 			}
 		var facts: Array = (tabs[tab] as Dictionary).get("facts", []) as Array
@@ -963,6 +993,25 @@ static func _sorted_dictionary_keys(dict: Dictionary) -> Array[String]:
 	for key in dict.keys():
 		out.append(str(key))
 	out.sort()
+	return out
+
+static func _case_engine_tab_pool_seed_value(run_seed_u64: int, suspect_index: int, reroll_index: int, tab: String) -> int:
+	return SeedUtil.derive_seed(
+		run_seed_u64,
+		"case_engine_tab_pool:%s" % tab,
+		suspect_index * 1000 + reroll_index
+	)
+
+static func _case_engine_tab_pool_seed_trace(run_seed_u64: int, suspect_index: int, reroll_index: int) -> Dictionary:
+	var out: Dictionary = {}
+	for tab in [
+		CaseEngineTypes.TAB_ALIBI,
+		CaseEngineTypes.TAB_TIMELINE,
+		CaseEngineTypes.TAB_MOTIVE,
+		CaseEngineTypes.TAB_CAPABILITY,
+		CaseEngineTypes.TAB_PROFILE,
+	]:
+		out[tab] = SeedUtil.hex16(_case_engine_tab_pool_seed_value(run_seed_u64, suspect_index, reroll_index, str(tab)))
 	return out
 
 static func _required_skeleton_fact_types(skeleton: Dictionary) -> Array[String]:

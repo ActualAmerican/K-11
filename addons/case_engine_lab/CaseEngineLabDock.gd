@@ -245,7 +245,7 @@ func _generate(advance_index: bool) -> void:
 	if run_seed_text == "":
 		run_seed_text = "K11-DEV"
 
-	var run_seed_u64: int = _parse_seed_u63(run_seed_text)
+	var run_seed_u64: int = SeedUtil.parse_run_seed_to_u63(run_seed_text)
 	if run_seed_u64 < 0:
 		_last_payload = {"ok": false, "error": "Invalid seed", "run_seed_text": run_seed_text}
 		_last_gate_trace = []
@@ -253,6 +253,7 @@ func _generate(advance_index: bool) -> void:
 		_last_gate_reject_codes = []
 		_refresh_ui({"level":"REJECT","items":[{"level":"REJECT","code":"BAD_SEED","msg":"Invalid seed text."}]}, JSON.stringify(_last_payload, "\t", true), 0.0)
 		return
+	run_seed_text = SeedUtil.format_run_seed_u63(run_seed_u64)
 
 	var idx: int = int(IndexSpin.value)
 	var rr_start: int = int(RerollSpin.value)
@@ -326,9 +327,10 @@ func _run_batch(n: int) -> void:
 	if run_seed_text == "":
 		run_seed_text = "K11-DEV"
 
-	var run_seed_u64: int = _parse_seed_u63(run_seed_text)
+	var run_seed_u64: int = SeedUtil.parse_run_seed_to_u63(run_seed_text)
 	if run_seed_u64 < 0:
 		return
+	run_seed_text = SeedUtil.format_run_seed_u63(run_seed_u64)
 
 	var start_idx: int = int(IndexSpin.value)
 	var rr_start: int = int(RerollSpin.value)
@@ -786,8 +788,8 @@ func _refresh_ui(report: Dictionary, json: String, gen_ms: float = 0.0) -> void:
 		return
 	Summary.append_text("Status: %s\n" % lvl)
 	if seed_hex == "":
-		var parsed := _parse_seed_u63(seed_txt)
-		seed_hex = SeedUtil.hex16(parsed) if parsed >= 0 else ""
+			var parsed := SeedUtil.parse_run_seed_to_u63(seed_txt)
+			seed_hex = SeedUtil.hex16(parsed) if parsed >= 0 else ""
 	Summary.append_text("seed: %s (%s)\n" % [seed_txt, seed_hex])
 	Summary.append_text("suspect_index: %s  reroll_index: %s\n" % [sidx, rr])
 	Summary.append_text("fingerprint: %s\n" % fp)
@@ -1019,66 +1021,6 @@ func _anchor_counts_from_suspect(suspect: Dictionary) -> Dictionary:
 			if out.has(anchor):
 				out[anchor] = int(out.get(anchor, 0)) + 1
 	return out
-
-func _parse_seed_u63(seed_text: String) -> int:
-	var text := seed_text.strip_edges()
-	if text == "":
-		return -1
-
-	var upper := text.to_upper()
-
-	# K11-<base36> (matches your run-seed style)
-	if upper.begins_with("K11-"):
-		var suffix := upper.substr(4).strip_edges()
-		var v36 := _from_base36(suffix)
-		return SeedUtil.normalize_seed(v36) if v36 >= 0 else -1
-
-	# Hex (0x... or 16-hex)
-	var hx := SeedUtil.hex_to_seed_u63(text)
-	if hx >= 0:
-		return SeedUtil.normalize_seed(hx)
-
-	# Digits-only integer
-	var digits_only := true
-	for i in range(text.length()):
-		var ch: String = text[i]
-		if ch < "0" or ch > "9":
-			digits_only = false
-			break
-	if digits_only:
-		return SeedUtil.normalize_seed(int(text.to_int()))
-
-	# Convenience: raw base36 without prefix
-	if _is_base36(text):
-		var v := _from_base36(text)
-		return SeedUtil.normalize_seed(v) if v >= 0 else -1
-
-	return -1
-
-func _is_base36(s: String) -> bool:
-	var t := s.strip_edges().to_upper()
-	if t == "":
-		return false
-	for i in range(t.length()):
-		var ch: String = t[i]
-		var ok := (ch >= "0" and ch <= "9") or (ch >= "A" and ch <= "Z")
-		if not ok:
-			return false
-	return true
-
-func _from_base36(s: String) -> int:
-	var t := s.strip_edges().to_upper()
-	if t == "":
-		return -1
-	var chars := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	var v: int = 0
-	for i in range(t.length()):
-		var ch: String = t[i]
-		var idx: int = chars.find(ch)
-		if idx < 0:
-			return -1
-		v = (v * 36) + idx
-	return v
 
 func _safe_filename(s: String) -> String:
 	var t := s.strip_edges()

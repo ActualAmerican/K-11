@@ -17,7 +17,14 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 
 	s.debug = {
 		"suspect_seed_hex": suspect_hex,
-		"subseeds": {}
+		"subseeds": {},
+		"seed_trace": {
+			"run_seed_text": SeedUtil.format_run_seed_u63(run_seed_u64),
+			"run_seed_u64_hex": SeedUtil.hex16(run_seed_u64),
+			"suspect_index": suspect_index,
+			"suspect_seed_u64_hex": suspect_hex,
+			"named_subseeds": {},
+		},
 	}
 
 	# Stable id from seed (no content library needed for identity)
@@ -33,26 +40,26 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 
 static func _build_silhouette(s: SuspectData) -> void:
 	var seed_value: int = SeedUtil.derive_seed(s.suspect_seed_u64, "silhouette", 0)
-	s.debug["subseeds"]["silhouette"] = SeedUtil.hex16(seed_value)
+	_record_subseed(s, "silhouette", seed_value)
 	var rng := SeedUtil.make_rng(seed_value)
 	var idx: int = int(rng.randi_range(1, 10))
 	s.silhouette_label = "SIL_%02d" % idx
 
 static func _build_deadline(s: SuspectData) -> void:
 	var seed_value: int = SeedUtil.derive_seed(s.suspect_seed_u64, "deadline", 0)
-	s.debug["subseeds"]["deadline"] = SeedUtil.hex16(seed_value)
+	_record_subseed(s, "deadline", seed_value)
 	var rng := SeedUtil.make_rng(seed_value)
 	s.deadline_s = int(rng.randi_range(60, 90))
 
 static func _build_truth(s: SuspectData) -> void:
 	var seed_value: int = SeedUtil.derive_seed(s.suspect_seed_u64, "truth", 0)
-	s.debug["subseeds"]["truth"] = SeedUtil.hex16(seed_value)
+	_record_subseed(s, "truth", seed_value)
 	var rng := SeedUtil.make_rng(seed_value)
 	s.truth_guilty = bool(rng.randi_range(0, 1) == 1)
 
 static func _build_charge_sheet(s: SuspectData) -> void:
 	var seed_value: int = SeedUtil.derive_seed(s.suspect_seed_u64, "charge_sheet", 0)
-	s.debug["subseeds"]["charge_sheet"] = SeedUtil.hex16(seed_value)
+	_record_subseed(s, "charge_sheet", seed_value)
 	var rng := SeedUtil.make_rng(seed_value)
 
 	var case_id: String = "CASE-%04d" % int(rng.randi_range(1, 9999))
@@ -101,6 +108,7 @@ static func _build_tabs(s: SuspectData) -> void:
 	for i in range(TAB_KEYS.size()):
 		var tab: String = TAB_KEYS[i]
 		var pool_seed: int = SeedUtil.derive_seed(s.suspect_seed_u64, "fact_pool", i)
+		_record_subseed(s, "fact_pool:%s" % tab, pool_seed)
 		# Contract includes "fact pools" even if content is minimal
 		tabs_out[tab] = {
 			"tab": tab,
@@ -149,3 +157,14 @@ static func _fact_text(tab: String, rng: RandomNumberGenerator) -> String:
 			return "Interview note: %s when pressed." % tell[int(rng.randi_range(0, tell.size() - 1))]
 		_:
 			return "No fact."
+
+static func _record_subseed(s: SuspectData, label: String, seed_value: int) -> void:
+	var seed_hex: String = SeedUtil.hex16(seed_value)
+	var subseeds: Dictionary = s.debug.get("subseeds", {}) as Dictionary
+	subseeds[label] = seed_hex
+	s.debug["subseeds"] = subseeds
+	var seed_trace: Dictionary = s.debug.get("seed_trace", {}) as Dictionary
+	var named_subseeds: Dictionary = seed_trace.get("named_subseeds", {}) as Dictionary
+	named_subseeds[label] = seed_hex
+	seed_trace["named_subseeds"] = named_subseeds
+	s.debug["seed_trace"] = seed_trace

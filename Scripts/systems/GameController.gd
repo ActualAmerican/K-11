@@ -1074,7 +1074,8 @@ func _seed_prompt_focus() -> void:
 
 func _update_seed_ok_button() -> void:
 	if is_instance_valid(_seed_ok_button) and is_instance_valid(_seed_line):
-		_seed_ok_button.disabled = _seed_line.text.strip_edges() == ""
+		var text: String = _seed_line.text.strip_edges()
+		_seed_ok_button.disabled = text == "" or _seed_parse(text) < 0
 
 func _cache_camera() -> void:
 	if is_instance_valid(_camera_node):
@@ -2779,7 +2780,7 @@ func _apply_imported_suspect(s: SuspectData, source: String) -> void:
 
 	suspect_index = s.suspect_index
 	suspect_seed_value = s.suspect_seed_u64
-	suspect_seed_text = "K11S-%s" % SeedUtil.hex16(suspect_seed_value)
+	suspect_seed_text = SeedUtil.format_suspect_seed_u64(suspect_seed_value)
 
 	var fp: String = SuspectIO.fingerprint_suspect(s)
 	var sid: String = s.short_id()
@@ -2908,58 +2909,13 @@ func _init_seed() -> void:
 	_log("SUSPECT_STREAM init idx=%d seed=%s" % [suspect_index, suspect_seed_text])
 
 func _seed_format(v: int) -> String:
-	if v < 0:
-		v = -v
-	return "K11-%s" % _to_base36(v)
+	return SeedUtil.format_run_seed_u63(v)
 
 func _seed_parse(s: String) -> int:
-	var text: String = s.strip_edges()
-	if text == "":
-		return -1
-
-	var upper: String = text.to_upper()
-	if upper.begins_with("K11-"):
-		var suffix: String = text.substr(4).strip_edges()
-		if suffix == "":
-			return -1
-		return _from_base36(suffix)
-
-	var digits_only: bool = true
-	for i in text.length():
-		var ch: String = text[i]
-		if ch < "0" or ch > "9":
-			digits_only = false
-			break
-	if digits_only:
-		return int(text)
-	return -1
+	return SeedUtil.parse_run_seed_to_u63(s)
 
 func get_seed_display() -> String:
 	return "%s (%d)" % [run_seed_text, run_seed_value]
-
-func _to_base36(v: int) -> String:
-	if v == 0:
-		return "0"
-	var chars: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	var value: int = v
-	var result: String = ""
-	while value > 0:
-		var idx: int = value % 36
-		result = chars[idx] + result
-		value = int(value / 36)
-	return result
-
-func _from_base36(s: String) -> int:
-	var chars: String = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	var value: int = 0
-	var upper: String = s.strip_edges().to_upper()
-	for i in upper.length():
-		var ch: String = upper[i]
-		var idx: int = chars.find(ch)
-		if idx < 0:
-			return -1
-		value = value * 36 + idx
-	return value
 
 func _on_tabs_bar_tab_changed(tab_id: String) -> void:
 	if current_suspect == null:
@@ -3119,7 +3075,7 @@ func _set_hud_tabs_enabled(enabled: bool) -> void:
 
 func _refresh_suspect_seed() -> void:
 	suspect_seed_value = SeedUtil.derive_seed(run_seed_u64, "suspect", suspect_index)
-	suspect_seed_text = "K11S-%s" % SeedUtil.hex16(suspect_seed_value)
+	suspect_seed_text = SeedUtil.format_suspect_seed_u64(suspect_seed_value)
 	var t0 := Time.get_ticks_usec()
 	current_suspect = SuspectFactory.generate(run_seed_u64, run_seed_text, suspect_index)
 	_last_suspect_gen_ms = float(Time.get_ticks_usec() - t0) / 1000.0
