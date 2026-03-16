@@ -11,6 +11,7 @@ var _hud_refresh_accum: float = 0.0
 var _last_toggle_edge_pan_event_id: int = 0
 var _last_force_verdict_event_id: int = 0
 var _suite: DevSuite = null
+var _case_lab: CanvasLayer = null
 
 func attach(p_controller: Node) -> void:
 	controller = p_controller
@@ -27,6 +28,8 @@ func attach(p_controller: Node) -> void:
 	_safe_call("._set_dev_hud_visible", [hud_visible])
 	_safe_call("._cleanup_duplicate_hud_labels")
 	_safe_call("._update_hud")
+	if _case_lab != null and is_instance_valid(_case_lab) and _case_lab.has_method("attach"):
+		_case_lab.call("attach", controller)
 
 func handle_case_handling_input(event: InputEvent, scene: Node) -> bool:
 	if controller == null:
@@ -61,6 +64,9 @@ func handle_input(event: InputEvent) -> bool:
 	if DevGate.ENABLED and event is InputEventKey:
 		var k: InputEventKey = event as InputEventKey
 		if k != null and k.pressed and not k.echo and k.ctrl_pressed and k.shift_pressed:
+			if k.keycode == KEY_L:
+				_toggle_case_engine_lab()
+				return true
 			var is_suite_hotkey: bool = k.keycode == KEY_BACKSPACE or k.keycode == KEY_U
 			if is_suite_hotkey:
 				var app_state: int = int(controller.get("app_state"))
@@ -335,10 +341,6 @@ func handle_input(event: InputEvent) -> bool:
 			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_K:
 				_safe_call(".request_shot", [DEV_TEST_SHOT_TYPE, false, "dev_hotkey"])
 				return true
-			if k.ctrl_pressed and k.shift_pressed and k.keycode == KEY_L:
-				_safe_call(".request_shot", [DEV_TEST_SHOT_TYPE, true, "dev_hotkey"])
-				return true
-
 	return false
 
 func _safe_call(method_name: String, args: Array = []) -> Variant:
@@ -378,6 +380,42 @@ func _c_obj(name: String) -> Object:
 func _log(msg: String) -> void:
 	_safe_call("._log", [msg])
 
+func _toggle_case_engine_lab() -> void:
+	var global_mount: Node = get_parent()
+	if global_mount == null:
+		_log("CASE_LAB: mount missing")
+		return
+
+	if _case_lab != null and is_instance_valid(_case_lab):
+		_case_lab.queue_free()
+		_case_lab = null
+		return
+
+	var scene: PackedScene = load("res://Scenes/CaseEngineLab.tscn") as PackedScene
+	if scene == null:
+		_log("CASE_LAB: missing scene res://Scenes/CaseEngineLab.tscn")
+		return
+
+	var node: Node = scene.instantiate()
+	var layer: CanvasLayer = node as CanvasLayer
+	if layer == null:
+		if node != null:
+			node.queue_free()
+		_log("CASE_LAB: scene root must be CanvasLayer")
+		return
+
+	_case_lab = layer
+	global_mount.add_child(_case_lab)
+	if _case_lab.has_method("attach"):
+		_case_lab.call("attach", controller)
+	if _case_lab.has_signal("closed"):
+		var cb: Callable = Callable(self, "_on_case_lab_closed")
+		if not _case_lab.is_connected("closed", cb):
+			_case_lab.connect("closed", cb)
+
+func _on_case_lab_closed() -> void:
+	_case_lab = null
+
 func _mount_hud_globally() -> void:
 	if controller == null:
 		return
@@ -397,3 +435,5 @@ func _mount_hud_globally() -> void:
 	for c in hud_layer.find_children("*", "Control", true, false):
 		if c is Control:
 			(c as Control).mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+

@@ -176,6 +176,12 @@ var _pending_seed_text: String = ""
 var _case_transition_layer: CanvasLayer = null
 var _case_transition_rect: ColorRect = null
 var _case_transition_busy: bool = false
+var _last_suspect_gen_ms: float = 0.0
+
+@export var suspect_load_fade_out_s: float = 0.10
+@export var suspect_load_black_hold_s: float = 0.02
+@export var suspect_load_fade_in_s: float = 0.14
+@export var suspect_load_warn_ms: float = 20.0
 
 @export var case_handling_black_hold_s: float = 0.22
 @export var case_handling_fade_in_s: float = 0.55
@@ -1177,7 +1183,7 @@ func _on_intermission_continue() -> void:
 
 func _on_intermission_finished() -> void:
 	_log("INTERMISSION: finished -> next suspect")
-	_advance_to_next_suspect()
+	await _advance_to_next_suspect_with_transition("intermission_finished")
 
 func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> void:
 	var carry_noise: int = maxi(_noise_points, 0)
@@ -1209,6 +1215,7 @@ func _on_case_handling_filed(_success: bool = true, _noise_points: int = 0) -> v
 		_cache_computer_screen_window()
 	if _computer_screen_window != null and _computer_screen_window.has_method("set_enabled"):
 		_computer_screen_window.call("set_enabled", true)
+	await get_tree().process_frame
 	_advance_to_next_suspect()
 	_log("INTERMISSION: filed -> next suspect (carry_noise=%d)" % carry_noise)
 	await _fade_in_case_transition()
@@ -2343,6 +2350,18 @@ func _advance_to_next_suspect() -> void:
 	_refresh_suspect_seed()
 	_update_hud()
 
+func _advance_to_next_suspect_with_transition(reason: String = "") -> void:
+	if _case_transition_busy:
+		return
+	_case_transition_busy = true
+	await _fade_to_case_transition_black(suspect_load_fade_out_s, suspect_load_black_hold_s)
+	await get_tree().process_frame
+	_advance_to_next_suspect()
+	if reason != "":
+		_log("SUSPECT_LOAD reason=%s gen_ms=%.3f" % [reason, _last_suspect_gen_ms])
+	await _fade_from_case_transition(suspect_load_fade_in_s)
+	_case_transition_busy = false
+
 func _reset_verdict_flow() -> void:
 	_verdict_committed = false
 	_verdict_choice = ""
@@ -3101,9 +3120,13 @@ func _set_hud_tabs_enabled(enabled: bool) -> void:
 func _refresh_suspect_seed() -> void:
 	suspect_seed_value = SeedUtil.derive_seed(run_seed_u64, "suspect", suspect_index)
 	suspect_seed_text = "K11S-%s" % SeedUtil.hex16(suspect_seed_value)
+	var t0 := Time.get_ticks_usec()
 	current_suspect = SuspectFactory.generate(run_seed_u64, run_seed_text, suspect_index)
+	_last_suspect_gen_ms = float(Time.get_ticks_usec() - t0) / 1000.0
 	if current_suspect != null:
-		_log("SUSPECT idx=%d seed=%s id=%s truth=%s" % [suspect_index, suspect_seed_text, current_suspect.id, current_suspect.truth_label()])
+		_log("SUSPECT idx=%d seed=%s id=%s truth=%s gen_ms=%.3f" % [suspect_index, suspect_seed_text, current_suspect.id, current_suspect.truth_label(), _last_suspect_gen_ms])
+	if _last_suspect_gen_ms > float(suspect_load_warn_ms):
+		_log("SUSPECT_GEN slow ms=%.3f idx=%d" % [_last_suspect_gen_ms, suspect_index])
 	if _noise_sys != null and _noise_sys.has_method("set_context"):
 		_noise_sys.call("set_context", {"suspect_index": suspect_index, "suspect_id": current_suspect.short_id() if current_suspect != null else "n/a"})
 	if time_policy == null:

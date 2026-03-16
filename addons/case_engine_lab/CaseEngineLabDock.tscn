@@ -1,0 +1,273 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/case_engine_lab/CaseEngineLabDock.gd" id=1]
+
+[node name="CaseEngineLabDock" type="Control"]
+script = ExtResource(1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="Root" type="VBoxContainer" parent="Margin"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Toolbar" type="VBoxContainer" parent="Margin/Root"]
+size_flags_horizontal = 3
+
+[node name="MainRow" type="HBoxContainer" parent="Margin/Root/Toolbar"]
+size_flags_horizontal = 3
+
+[node name="SeedLbl" type="Label" parent="Margin/Root/Toolbar/MainRow"]
+text = "Seed"
+
+[node name="SeedEdit" type="LineEdit" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+text = "K11-1LU"
+
+[node name="IdxLbl" type="Label" parent="Margin/Root/Toolbar/MainRow"]
+text = "Idx"
+
+[node name="IndexSpin" type="SpinBox" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+min_value = 0
+max_value = 999999
+step = 1
+value = 0
+
+[node name="RrLbl" type="Label" parent="Margin/Root/Toolbar/MainRow"]
+text = "Reroll"
+
+[node name="RerollSpin" type="SpinBox" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+min_value = 0
+max_value = 999
+step = 1
+value = 0
+
+[node name="GenerateBtn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "Generate"
+
+[node name="NextBtn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "Next"
+
+[node name="Batch200Btn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "B200"
+tooltip_text = "Batch 200"
+
+[node name="Batch2kBtn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "B2K"
+tooltip_text = "Batch 2000"
+
+[node name="ExportCsvBtn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "CSV"
+tooltip_text = "Export CSV"
+
+[node name="ExportJsonBtn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "JSON"
+tooltip_text = "Export JSON (last)"
+
+[node name="TruthToggle" type="CheckBox" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "Truth"
+
+[node name="ClearBtn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "Clear"
+
+[node name="FolioBtn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "Folio"
+
+[node name="FaultRow" type="HFlowContainer" parent="Margin/Root/Toolbar"]
+size_flags_horizontal = 3
+
+[node name="FaultLbl" type="Label" parent="Margin/Root/Toolbar/FaultRow"]
+text = "Fault"
+
+[node name="FaultMode" type="OptionButton" parent="Margin/Root/Toolbar/FaultRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 0)
+
+[node name="FaultNoTimeline" type="CheckBox" parent="Margin/Root/Toolbar/FaultRow"]
+unique_name_in_owner = true
+text = "NoTL"
+tooltip_text = "No timeline anchor"
+
+[node name="FaultGuiltTell" type="CheckBox" parent="Margin/Root/Toolbar/FaultRow"]
+unique_name_in_owner = true
+text = "Guilt"
+tooltip_text = "Inject guilt-tell phrase"
+
+[node name="FaultUnresolvable" type="CheckBox" parent="Margin/Root/Toolbar/FaultRow"]
+unique_name_in_owner = true
+text = "Unres"
+tooltip_text = "Unresolvable conflict"
+
+[node name="FaultCorruptAnchors" type="CheckBox" parent="Margin/Root/Toolbar/FaultRow"]
+unique_name_in_owner = true
+text = "Corrupt"
+tooltip_text = "Corrupt all anchors"
+
+[node name="Summary" type="RichTextLabel" parent="Margin/Root"]
+unique_name_in_owner = true
+fit_content = true
+scroll_active = false
+
+[node name="Split" type="HSplitContainer" parent="Margin/Root"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Left" type="VBoxContainer" parent="Margin/Root/Split"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="LeftSplit" type="VSplitContainer" parent="Margin/Root/Split/Left"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="PreviewPanel" type="VBoxContainer" parent="Margin/Root/Split/Left/LeftSplit"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="PreviewTitle" type="Label" parent="Margin/Root/Split/Left/LeftSplit/PreviewPanel"]
+text = "Case Folder Preview"
+
+[node name="PreviewTabs" type="TabBar" parent="Margin/Root/Split/Left/LeftSplit/PreviewPanel"]
+unique_name_in_owner = true
+tab_count = 4
+tab_0/title = "Charge Sheet"
+tab_1/title = "Dossier"
+tab_2/title = "Profile"
+tab_3/title = "Evidence"
+
+[node name="EvidenceTabs" type="TabBar" parent="Margin/Root/Split/Left/LeftSplit/PreviewPanel"]
+unique_name_in_owner = true
+tab_count = 5
+tab_0/title = "ALIBI"
+tab_1/title = "TIMELINE"
+tab_2/title = "CAPABILITY"
+tab_3/title = "MOTIVE"
+tab_4/title = "PROFILE"
+visible = false
+
+[node name="PreviewText" type="TextEdit" parent="Margin/Root/Split/Left/LeftSplit/PreviewPanel"]
+unique_name_in_owner = true
+readonly = true
+wrap_mode = 1
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="DiagPanel" type="VBoxContainer" parent="Margin/Root/Split/Left/LeftSplit"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="DiagTitle" type="Label" parent="Margin/Root/Split/Left/LeftSplit/DiagPanel"]
+text = "Diagnostics"
+
+[node name="ValidatorList" type="ItemList" parent="Margin/Root/Split/Left/LeftSplit/DiagPanel"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Right" type="VBoxContainer" parent="Margin/Root/Split"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="RawTitle" type="Label" parent="Margin/Root/Split/Right"]
+text = "Raw Payload (JSON / CSV)"
+
+[node name="JsonText" type="TextEdit" parent="Margin/Root/Split/Right"]
+unique_name_in_owner = true
+readonly = true
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="FolioWindow" type="Window" parent="."]
+unique_name_in_owner = true
+visible = false
+title = "Case Folder Folio"
+size = Vector2i(1400, 880)
+
+[node name="FolioRoot" type="VBoxContainer" parent="FolioWindow"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = -16.0
+
+[node name="FolioToolbar" type="HBoxContainer" parent="FolioWindow/FolioRoot"]
+
+[node name="SpreadTitle" type="Label" parent="FolioWindow/FolioRoot/FolioToolbar"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+text = "Spread 1"
+
+[node name="PrevSpreadBtn" type="Button" parent="FolioWindow/FolioRoot/FolioToolbar"]
+unique_name_in_owner = true
+text = "Prev"
+
+[node name="NextSpreadBtn" type="Button" parent="FolioWindow/FolioRoot/FolioToolbar"]
+unique_name_in_owner = true
+text = "Next"
+
+[node name="CloseFolioBtn" type="Button" parent="FolioWindow/FolioRoot/FolioToolbar"]
+unique_name_in_owner = true
+text = "Close"
+
+[node name="FolioPages" type="HSplitContainer" parent="FolioWindow/FolioRoot"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="LeftPage" type="VBoxContainer" parent="FolioWindow/FolioRoot/FolioPages"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="LeftPageTitle" type="Label" parent="FolioWindow/FolioRoot/FolioPages/LeftPage"]
+unique_name_in_owner = true
+text = "Left Page"
+
+[node name="LeftPageBody" type="RichTextLabel" parent="FolioWindow/FolioRoot/FolioPages/LeftPage"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+size_flags_vertical = 3
+scroll_active = true
+
+[node name="RightPage" type="VBoxContainer" parent="FolioWindow/FolioRoot/FolioPages"]
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="RightPageTitle" type="Label" parent="FolioWindow/FolioRoot/FolioPages/RightPage"]
+unique_name_in_owner = true
+text = "Right Page"
+
+[node name="RightPageBody" type="RichTextLabel" parent="FolioWindow/FolioRoot/FolioPages/RightPage"]
+unique_name_in_owner = true
+size_flags_horizontal = 3
+size_flags_vertical = 3
+scroll_active = true
+
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/GenerateBtn" to="." method="_on_GenerateBtn_pressed"]
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/ClearBtn" to="." method="_on_ClearBtn_pressed"]
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/NextBtn" to="." method="_on_NextBtn_pressed"]
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/Batch200Btn" to="." method="_on_Batch200Btn_pressed"]
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/Batch2kBtn" to="." method="_on_Batch2kBtn_pressed"]
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/ExportCsvBtn" to="." method="_on_ExportCsvBtn_pressed"]
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/ExportJsonBtn" to="." method="_on_ExportJsonBtn_pressed"]
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/FolioBtn" to="." method="_on_FolioBtn_pressed"]

@@ -1,3 +1,4 @@
+@tool
 extends RefCounted
 class_name SeedUtil
 
@@ -68,3 +69,65 @@ static func _fnv1a64(s: String) -> int:
 		hash64 = hash64 ^ int(b)
 		hash64 = hash64 * prime
 	return hash64
+
+static func parse_k11_seed_to_u63(seed_text: String) -> int:
+	var text: String = seed_text.strip_edges()
+	if text == "":
+		return -1
+
+	var upper: String = text.to_upper()
+
+	# Primary: K11-<base36> (matches GameController behavior)
+	if upper.begins_with("K11-"):
+		var suffix: String = text.substr(4).strip_edges()
+		if suffix == "":
+			return -1
+		var v36: int = _from_base36(suffix)
+		return normalize_seed(v36) if v36 >= 0 else -1
+
+	# Hex (0x... or 16-hex)
+	var hx: int = hex_to_seed_u63(text)
+	if hx >= 0:
+		return normalize_seed(hx)
+
+	# Digits-only integer
+	var digits_only := true
+	for i in range(text.length()):
+		var ch: String = text[i]
+		if ch < "0" or ch > "9":
+			digits_only = false
+			break
+	if digits_only:
+		return normalize_seed(int(text.to_int()))
+
+	# Convenience: raw base36 without prefix
+	if _is_base36(text):
+		var v: int = _from_base36(text)
+		return normalize_seed(v) if v >= 0 else -1
+
+	return -1
+
+static func _is_base36(s: String) -> bool:
+	if s == "":
+		return false
+	var t := s.strip_edges().to_upper()
+	for i in range(t.length()):
+		var ch: String = t[i]
+		var ok := (ch >= "0" and ch <= "9") or (ch >= "A" and ch <= "Z")
+		if not ok:
+			return false
+	return true
+
+static func _from_base36(s: String) -> int:
+	var t := s.strip_edges().to_upper()
+	if t == "":
+		return -1
+	var chars := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	var v: int = 0
+	for i in range(t.length()):
+		var ch: String = t[i]
+		var idx: int = chars.find(ch)
+		if idx < 0:
+			return -1
+		v = (v * 36) + idx
+	return v

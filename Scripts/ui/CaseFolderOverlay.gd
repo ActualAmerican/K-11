@@ -1,7 +1,10 @@
 extends Control
 
+const CaseFolderRender = preload("res://Scripts/case_engine/CaseFolderRender.gd")
+
 var _left_text: RichTextLabel
 var _right_text: RichTextLabel
+var _case_payload: Dictionary = {}
 
 func _ready() -> void:
 	anchor_left = 0.0
@@ -90,58 +93,40 @@ func _ready() -> void:
 	_render_placeholder()
 
 func set_suspect(suspect: Object) -> void:
-	# Works with SuspectData without hard-typing the class here (keeps it resilient).
 	if suspect == null:
+		_case_payload = {}
 		_render_placeholder()
 		return
+	_case_payload = _payload_from_suspect(suspect)
+	_render_case()
 
-	var left_lines: Array[String] = []
-	var right_lines: Array[String] = []
+func set_case_payload(case_payload: Dictionary) -> void:
+	_case_payload = case_payload.duplicate(true)
+	_render_case()
 
-	if suspect.has_method("get"):
-		# If SuspectData exposes dict-like access later
-		pass
-
-	# Try common fields safely
-	var sid := ""
-	if "suspect_id" in suspect:
-		sid = str(suspect.suspect_id)
-	elif suspect.has_method("get_suspect_id"):
-		sid = str(suspect.call("get_suspect_id"))
-
-	left_lines.append("[b]Suspect:[/b] %s" % sid)
-	left_lines.append("")
-	left_lines.append("Charge sheet content will go here (v0).")
-	left_lines.append("")
-
-	# Dump tabs/facts if present
-	if "tabs" in suspect:
-		var tabs = suspect.tabs
-		for k in tabs.keys():
-			right_lines.append("[b]%s[/b]" % str(k))
-			var tabd = tabs[k]
-			var facts: Array = []
-			if typeof(tabd) == TYPE_DICTIONARY:
-				facts = tabd.get("facts", []) as Array
-			for f in facts:
-				if typeof(f) == TYPE_DICTIONARY:
-					var d := f as Dictionary
-					var rel := str(d.get("reliability", ""))
-					var txt := str(d.get("text", ""))
-					if rel != "":
-						right_lines.append("- [%s] %s" % [rel, txt])
-					else:
-						right_lines.append("- %s" % txt)
-			right_lines.append("")
-
+func _render_case() -> void:
+	if _case_payload.is_empty():
+		_render_placeholder()
+		return
 	_left_text.clear()
-	_left_text.append_text("\n".join(left_lines))
-
+	_left_text.append_text(CaseFolderRender.render_charge_sheet(_case_payload))
 	_right_text.clear()
-	_right_text.append_text("\n".join(right_lines))
+	_right_text.append_text(CaseFolderRender.render_dossier_summary(_case_payload))
 
 func _render_placeholder() -> void:
 	_left_text.clear()
-	_left_text.append_text("No suspect bound.\n\n(Once wired, this will show charge sheet fields.)")
+	_left_text.append_text("No case bound.\n\n(Charge sheet will appear here.)")
 	_right_text.clear()
-	_right_text.append_text("No suspect bound.\n\n(Once wired, this will show dossier tabs & facts.)")
+	_right_text.append_text("No case bound.\n\n(Dossier summary will appear here.)")
+
+func _payload_from_suspect(suspect: Object) -> Dictionary:
+	if not (suspect is SuspectData):
+		return {}
+	var suspect_dict: Dictionary = SuspectIO.to_dict(suspect as SuspectData)
+	var debug_dict: Dictionary = suspect_dict.get("debug", {}) as Dictionary
+	var truth_bundle: Dictionary = debug_dict.get("case_engine_truth_bundle", {}) as Dictionary
+	return {
+		"ok": true,
+		"suspect": suspect_dict,
+		"truth_bundle": truth_bundle,
+	}

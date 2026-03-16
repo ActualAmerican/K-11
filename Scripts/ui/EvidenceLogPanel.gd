@@ -1,6 +1,8 @@
 extends PanelContainer
 class_name EvidenceLogPanel
 
+const CaseFolderRender = preload("res://Scripts/case_engine/CaseFolderRender.gd")
+
 @export var show_all_tabs: bool = false
 @export var max_lines: int = 200
 @export var debug_force_visible: bool = false
@@ -79,18 +81,10 @@ func _format_entry(e: Dictionary) -> String:
 	var tab: String = String(e.get("tab", ""))
 	var rel: String = String(e.get("reliability", "")).strip_edges().to_upper()
 	var text: String = String(e.get("text", ""))
-
-	var badge: String = "[UNK]"
-	match rel:
-		"SOLID":
-			badge = "[SOLID]"
-		"SHAKY":
-			badge = "[SHAKY]"
-		"CORRUPTED":
-			badge = "[CORRUPTED]"
+	var badge: String = CaseFolderRender._reliability_badge(rel)
 
 	var conflict_mark: String = ""
-	if bool(e.get("conflict", false)):
+	if bool(e.get("conflict", false)) or str(e.get("conflict_group", "")) != "":
 		conflict_mark = " ( )"
 
 	var prefix: String = ""
