@@ -157,7 +157,9 @@ static func render_evidence_page(case_payload: Dictionary, tab_id: String) -> St
 		if fact_v is Dictionary:
 			var fact: Dictionary = fact_v as Dictionary
 			var conflict_group: String = str(fact.get("conflict_group", ""))
-			var marker: String = " ( )" if conflict_group != "" else ""
+			var conflict_group_kind: String = str(fact.get("conflict_group_kind", "contradiction"))
+			var conflict_group_member_count: int = int(fact.get("conflict_group_member_count", 0))
+			var marker: String = " ( )" if conflict_group != "" and conflict_group_kind == "contradiction" and conflict_group_member_count >= 2 else ""
 			lines.append("%s %s%s" % [_reliability_badge(str(fact.get("reliability", ""))), str(fact.get("text", "")), marker])
 	return "\n".join(lines)
 

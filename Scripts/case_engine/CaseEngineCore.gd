@@ -476,9 +476,10 @@ static func _build_tabs(rng: RandomNumberGenerator, truth_bundle: Dictionary, sk
 		"salvaged_missing_conflict_group_count": maxi(int(first_audit.get("salvaged_missing_conflict_group_count", 0)), int(second_audit.get("salvaged_missing_conflict_group_count", 0))),
 		"salvaged_unresolvable_conflict_group_count": maxi(int(first_audit.get("salvaged_unresolvable_conflict_group_count", 0)), int(second_audit.get("salvaged_unresolvable_conflict_group_count", 0))),
 	}
-	var final_conflict_audit: Dictionary = second_audit.duplicate(true)
+	var final_conflict_audit: Dictionary = _annotate_conflict_audit_groups(second_audit)
 	final_conflict_audit["salvaged_missing_conflict_group_count"] = int(merged_salvage_audit.get("salvaged_missing_conflict_group_count", 0))
 	final_conflict_audit["salvaged_unresolvable_conflict_group_count"] = int(merged_salvage_audit.get("salvaged_unresolvable_conflict_group_count", 0))
+	atoms = _apply_ui_conflict_groups(atoms, final_conflict_audit)
 	truth_bundle["conflict_audit"] = final_conflict_audit
 	truth_bundle["salvage_audit"] = merged_salvage_audit
 	var conflict_audit: Dictionary = truth_bundle.get("conflict_audit", {}) as Dictionary
@@ -494,6 +495,8 @@ static func _build_tabs(rng: RandomNumberGenerator, truth_bundle: Dictionary, sk
 			"members": member_ids,
 			"breaker_id": str(group_row.get("breaker_id", "")),
 			"repaired": bool(group_row.get("repaired", false)),
+			"group_kind": str(group_row.get("group_kind", "")),
+			"member_count": int(group_row.get("member_count", member_ids.size())),
 		}
 	_trace_push(gen_trace, "CONFLICT_REPAIR", {
 		"repaired_groups": conflict_audit.get("repaired_groups", []),
@@ -538,26 +541,32 @@ static func _make_fact_atom(rng: RandomNumberGenerator, tab: String, d: Dictiona
 		else:
 			slots[key] = "n/a"
 
-	var reliability: String = _apply_reliability_transform(rng, str(d.get("reliability", CaseEngineTypes.RELIABILITY_QUESTIONABLE)))
-
-	var text: String = _render_template(str(d.get("text_tpl", "")), slots)
+	var fact_type: String = str(d.get("fact_type", CaseEngineTypes.FACT_TYPE_OBSERVATION))
+	var anchor: String = str(d.get("anchor", ""))
+	var conflict_group: String = str(d.get("conflict_group", ""))
+	var base_reliability: String = str(d.get("reliability", CaseEngineTypes.RELIABILITY_SHAKY))
+	var reliability: String = _apply_reliability_transform(rng, base_reliability, fact_type, anchor, conflict_group)
+	var base_text: String = _render_template(str(d.get("text_tpl", "")), slots)
+	var text: String = _apply_reliability_text(base_text, reliability, fact_type, anchor)
 	var truth_refs: Array = d.get("truth_refs", []) as Array
 	var normalized_refs: Array[String] = []
 	for r in truth_refs:
 		normalized_refs.append(str(r))
 
-	return CaseEngineFactAtom.make(
+	var atom: Dictionary = CaseEngineFactAtom.make(
 		"%s_%02d_%s" % [tab.to_lower(), seq, str(d.get("template_id", "template"))],
 		tab,
-		str(d.get("fact_type", CaseEngineTypes.FACT_TYPE_OBSERVATION)),
+		fact_type,
 		text,
 		normalized_refs,
 		slots,
 		reliability,
-		str(d.get("conflict_group", "")),
-		str(d.get("anchor", "")),
+		conflict_group,
+		anchor,
 		str(d.get("template_id", "template"))
 	)
+	atom["base_text"] = base_text
+	return atom
 
 static func _template_matches_spec(template_def: Dictionary, spec: Dictionary) -> bool:
 	if str(template_def.get("tab", "")) != str(spec.get("tab", "")):
@@ -620,10 +629,144 @@ static func _bucket_atoms_into_tabs(atoms: Array[Dictionary], run_seed_u64: int,
 		(tabs[tab] as Dictionary)["facts"] = facts
 	return tabs
 
-static func _apply_reliability_transform(rng: RandomNumberGenerator, reliability: String) -> String:
-	if reliability != CaseEngineTypes.RELIABILITY_SOLID and rng.randf() < 0.2:
+static func _apply_reliability_transform(
+	rng: RandomNumberGenerator,
+	reliability: String,
+	fact_type: String,
+	anchor: String,
+	conflict_group: String
+) -> String:
+	var normalized: String = _normalize_reliability_value(reliability)
+	var solid_weight: int = 0
+	var shaky_weight: int = 0
+	var corrupted_weight: int = 0
+
+	if normalized == CaseEngineTypes.RELIABILITY_SOLID:
+		solid_weight = 12
+		shaky_weight = 3
+		corrupted_weight = 1
+	elif normalized == CaseEngineTypes.RELIABILITY_CORRUPTED:
+		solid_weight = 1
+		shaky_weight = 5
+		corrupted_weight = 4
+	else:
+		solid_weight = 2
+		shaky_weight = 10
+		corrupted_weight = 3
+
+	if (
+		fact_type == CaseEngineTypes.FACT_TIMELINE_ANCHOR
+		or fact_type == CaseEngineTypes.FACT_ALIBI_STATEMENT
+		or fact_type == CaseEngineTypes.FACT_CAPABILITY_ACCESS
+	):
+		solid_weight += 5
+		corrupted_weight = maxi(0, corrupted_weight - 1)
+	elif (
+		fact_type == CaseEngineTypes.FACT_MOTIVE_PRESSURE
+		or fact_type == CaseEngineTypes.FACT_MOTIVE_RELATIONSHIP
+	):
+		solid_weight += 2
+		shaky_weight += 1
+	elif (
+		fact_type == CaseEngineTypes.FACT_TIMELINE_NOTE
+		or fact_type == CaseEngineTypes.FACT_ALIBI_WITNESS
+		or fact_type == CaseEngineTypes.FACT_CAPABILITY_TRAINING
+		or fact_type == CaseEngineTypes.FACT_PROFILE_BEHAVIOR
+	):
+		shaky_weight += 3
+		corrupted_weight += 3
+
+	if (
+		anchor == CaseEngineTypes.ANCHOR_TIMELINE
+		or anchor == CaseEngineTypes.ANCHOR_ALIBI
+		or anchor == CaseEngineTypes.ANCHOR_CAPABILITY
+		or anchor == CaseEngineTypes.ANCHOR_MOTIVE
+		or anchor == CaseEngineTypes.ANCHOR_RELATIONSHIP
+	):
+		solid_weight += 1
+	if conflict_group != "":
+		shaky_weight += 1
+		corrupted_weight += 1
+
+	var rows: Array[Dictionary] = []
+	rows.append({"id": CaseEngineTypes.RELIABILITY_SOLID, "weight": maxi(0, solid_weight)})
+	rows.append({"id": CaseEngineTypes.RELIABILITY_SHAKY, "weight": maxi(0, shaky_weight)})
+	rows.append({"id": CaseEngineTypes.RELIABILITY_CORRUPTED, "weight": maxi(0, corrupted_weight)})
+	return str(_weighted_pick_rows(rows, rng).get("id", normalized))
+
+static func _normalize_reliability_value(reliability: String) -> String:
+	var normalized: String = reliability.strip_edges().to_upper()
+	if normalized == CaseEngineTypes.RELIABILITY_SOLID:
+		return CaseEngineTypes.RELIABILITY_SOLID
+	if normalized == CaseEngineTypes.RELIABILITY_CORRUPTED:
 		return CaseEngineTypes.RELIABILITY_CORRUPTED
-	return reliability
+	if normalized == "QUESTIONABLE" or normalized == CaseEngineTypes.RELIABILITY_SHAKY:
+		return CaseEngineTypes.RELIABILITY_SHAKY
+	return CaseEngineTypes.RELIABILITY_SHAKY
+
+static func _apply_reliability_text(base_text: String, reliability: String, fact_type: String, anchor: String) -> String:
+	var normalized: String = _normalize_reliability_value(reliability)
+	if normalized == CaseEngineTypes.RELIABILITY_SOLID:
+		return base_text
+	if normalized == CaseEngineTypes.RELIABILITY_SHAKY:
+		return "%s %s" % [base_text, _shaky_text_suffix(fact_type, anchor)]
+	return "%s %s" % [base_text, _corrupted_text_suffix(fact_type, anchor)]
+
+static func _shaky_text_suffix(fact_type: String, anchor: String) -> String:
+	if fact_type == CaseEngineTypes.FACT_TIMELINE_ANCHOR or fact_type == CaseEngineTypes.FACT_TIMELINE_NOTE:
+		return "Timing is approximate."
+	if fact_type == CaseEngineTypes.FACT_ALIBI_STATEMENT or fact_type == CaseEngineTypes.FACT_ALIBI_WITNESS:
+		return "Account is partial."
+	if fact_type == CaseEngineTypes.FACT_CAPABILITY_ACCESS or fact_type == CaseEngineTypes.FACT_CAPABILITY_TRAINING:
+		return "Record is incomplete."
+	if fact_type == CaseEngineTypes.FACT_MOTIVE_PRESSURE or fact_type == CaseEngineTypes.FACT_MOTIVE_RELATIONSHIP:
+		return "Context note is indirect."
+	if fact_type == CaseEngineTypes.FACT_PROFILE_BEHAVIOR:
+		return "Note is impression-based."
+	if anchor == CaseEngineTypes.ANCHOR_TIMELINE:
+		return "Timing is approximate."
+	if anchor == CaseEngineTypes.ANCHOR_ALIBI:
+		return "Account is partial."
+	if anchor == CaseEngineTypes.ANCHOR_CAPABILITY:
+		return "Record is incomplete."
+	if anchor == CaseEngineTypes.ANCHOR_MOTIVE or anchor == CaseEngineTypes.ANCHOR_RELATIONSHIP:
+		return "Context note is indirect."
+	return "Detail is uncertain."
+
+static func _corrupted_text_suffix(fact_type: String, anchor: String) -> String:
+	if fact_type == CaseEngineTypes.FACT_TIMELINE_ANCHOR or fact_type == CaseEngineTypes.FACT_TIMELINE_NOTE:
+		return "The note contains inconsistent timing."
+	if fact_type == CaseEngineTypes.FACT_ALIBI_STATEMENT or fact_type == CaseEngineTypes.FACT_ALIBI_WITNESS:
+		return "The account conflicts with another note."
+	if fact_type == CaseEngineTypes.FACT_CAPABILITY_ACCESS or fact_type == CaseEngineTypes.FACT_CAPABILITY_TRAINING:
+		return "Part of the record is corrupted."
+	if fact_type == CaseEngineTypes.FACT_MOTIVE_PRESSURE or fact_type == CaseEngineTypes.FACT_MOTIVE_RELATIONSHIP:
+		return "The record chain is inconsistent."
+	if fact_type == CaseEngineTypes.FACT_PROFILE_BEHAVIOR:
+		return "The note contains transcription noise."
+	if anchor == CaseEngineTypes.ANCHOR_TIMELINE:
+		return "The note contains inconsistent timing."
+	if anchor == CaseEngineTypes.ANCHOR_ALIBI:
+		return "The account conflicts with another note."
+	if anchor == CaseEngineTypes.ANCHOR_CAPABILITY:
+		return "Part of the record is corrupted."
+	if anchor == CaseEngineTypes.ANCHOR_MOTIVE or anchor == CaseEngineTypes.ANCHOR_RELATIONSHIP:
+		return "The record chain is inconsistent."
+	return "The entry contains inconsistencies."
+
+static func _set_atom_reliability(atom: Dictionary, reliability: String) -> Dictionary:
+	var updated: Dictionary = atom.duplicate(true)
+	var normalized: String = _normalize_reliability_value(reliability)
+	var base_text: String = str(updated.get("base_text", updated.get("text", "")))
+	updated["base_text"] = base_text
+	updated["reliability"] = normalized
+	updated["text"] = _apply_reliability_text(
+		base_text,
+		normalized,
+		str(updated.get("fact_type", "")),
+		str(updated.get("anchor", ""))
+	)
+	return updated
 
 static func _repair_conflict_groups(
 	atoms: Array,
@@ -715,8 +858,7 @@ static func _repair_conflict_groups(
 				str(group_id)
 			)
 			if pick_idx >= 0 and pick_idx < members.size():
-				var chosen := (members[pick_idx] as Dictionary).duplicate(true)
-				chosen["reliability"] = "SOLID"
+				var chosen := _set_atom_reliability((members[pick_idx] as Dictionary), CaseEngineTypes.RELIABILITY_SOLID)
 
 				var ftype := str(chosen.get("fact_type", ""))
 				var required_anchor := str(req_anchor_map.get(ftype, ""))
@@ -951,8 +1093,7 @@ static func _salvage_anchor_only_corrupted(
 		)
 		if pick_idx < 0 or not (atoms[pick_idx] is Dictionary):
 			continue
-		var promoted: Dictionary = (atoms[pick_idx] as Dictionary).duplicate(true)
-		promoted["reliability"] = "SOLID"
+		var promoted: Dictionary = _set_atom_reliability((atoms[pick_idx] as Dictionary), CaseEngineTypes.RELIABILITY_SOLID)
 		atoms[pick_idx] = promoted
 		salvaged_anchor_names.append(anchor_name)
 	return {
@@ -980,13 +1121,13 @@ static func _pick_anchor_salvage_index(
 			continue
 		var atom: Dictionary = atoms[atom_idx] as Dictionary
 		var score: int = 0
-		var reliability: String = str(atom.get("reliability", ""))
+		var reliability: String = _normalize_reliability_value(str(atom.get("reliability", "")))
 		var fact_type: String = str(atom.get("fact_type", ""))
 		if required_fact_types.has(fact_type):
 			score += 60
-		if reliability == "CORRUPTED":
+		if reliability == CaseEngineTypes.RELIABILITY_CORRUPTED:
 			score += 30
-		elif reliability == "QUESTIONABLE" or reliability == "SHAKY":
+		elif reliability == CaseEngineTypes.RELIABILITY_SHAKY:
 			score += 20
 		if str(atom.get("conflict_group", "")) != "":
 			score += 10
@@ -1069,6 +1210,45 @@ static func _build_conflict_groups(payload: Dictionary) -> Dictionary:
 				groups[grp] = []
 			(groups[grp] as Array).append(str(fd.get("fact_id", "")))
 	return groups
+
+static func _annotate_conflict_audit_groups(conflict_audit: Dictionary) -> Dictionary:
+	var annotated: Dictionary = conflict_audit.duplicate(true)
+	var groups: Dictionary = annotated.get("groups", {}) as Dictionary
+	var annotated_groups: Dictionary = {}
+	for group_id in _sorted_dictionary_keys(groups):
+		var group_row: Dictionary = groups.get(group_id, {}) as Dictionary
+		var updated_row: Dictionary = group_row.duplicate(true)
+		var members: Array = updated_row.get("members", []) as Array
+		var member_count: int = members.size()
+		var is_contradiction: bool = member_count >= 2
+		updated_row["member_count"] = member_count
+		updated_row["group_kind"] = "contradiction" if is_contradiction else "support"
+		updated_row["ui_visible"] = is_contradiction
+		annotated_groups[group_id] = updated_row
+	annotated["groups"] = annotated_groups
+	return annotated
+
+static func _apply_ui_conflict_groups(atoms: Array, conflict_audit: Dictionary) -> Array:
+	var updated_atoms: Array = atoms.duplicate(true)
+	var groups: Dictionary = conflict_audit.get("groups", {}) as Dictionary
+	for i in range(updated_atoms.size()):
+		if not (updated_atoms[i] is Dictionary):
+			continue
+		var atom: Dictionary = updated_atoms[i] as Dictionary
+		var group_id: String = str(atom.get("conflict_group", ""))
+		if group_id == "":
+			continue
+		var group_row: Dictionary = groups.get(group_id, {}) as Dictionary
+		var member_count: int = int(group_row.get("member_count", 0))
+		var group_kind: String = str(group_row.get("group_kind", "support"))
+		var ui_visible: bool = bool(group_row.get("ui_visible", false))
+		atom["conflict_group_kind"] = group_kind
+		atom["conflict_group_member_count"] = member_count
+		if not ui_visible:
+			atom["support_group"] = group_id
+			atom["conflict_group"] = ""
+		updated_atoms[i] = atom
+	return updated_atoms
 
 static func _render_template(tpl: String, slots: Dictionary) -> String:
 	var out: String = tpl

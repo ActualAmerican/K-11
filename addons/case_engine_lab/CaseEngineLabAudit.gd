@@ -115,6 +115,8 @@ static func build_case_audit(payload: Dictionary, report: Dictionary, gate_meta:
 			"member_count": members.size(),
 			"breaker_id_present": breaker_id != "",
 			"has_solid_breaker": has_solid_breaker,
+			"group_kind": str(group_row.get("group_kind", "")),
+			"ui_visible": bool(group_row.get("ui_visible", false)),
 		}
 
 	var profile_page: String = CaseFolderRender.render_profile_page(payload)
