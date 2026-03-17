@@ -18,7 +18,9 @@ static func generate_case(run_seed_u64: int, run_seed_text: String, suspect_inde
 		}
 
 	var suspect_dict: Dictionary = result.get("suspect", {}) as Dictionary
-	var truth_bundle: Dictionary = result.get("truth_bundle", {}) as Dictionary
+	var truth_bundle: Dictionary = suspect_dict.get("truth_bundle", {}) as Dictionary
+	if truth_bundle.is_empty():
+		truth_bundle = result.get("truth_bundle", {}) as Dictionary
 	var conflict_groups: Dictionary = result.get("conflict_groups", {}) as Dictionary
 
 	var fp_basis: Dictionary = {
@@ -42,6 +44,7 @@ static func generate_case(run_seed_u64: int, run_seed_text: String, suspect_inde
 		"fingerprint": fingerprint,
 		"truth_bundle": truth_bundle,
 		"conflict_groups": conflict_groups,
+		"seed_trace": result.get("seed_trace", truth_bundle.get("seed_trace", {})),
 		"gen_trace": result.get("gen_trace", []),
 		"suspect": suspect_dict,
 	}

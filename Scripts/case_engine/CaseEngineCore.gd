@@ -303,7 +303,9 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 	for tab_id in _sorted_dictionary_keys(tab_pool_seed_trace):
 		unified_named_subseeds["case_engine_tab_pool:%s" % tab_id] = str(tab_pool_seed_trace.get(tab_id, ""))
 	seed_trace["named_subseeds"] = unified_named_subseeds
+	truth_bundle["tab_pools"] = _tab_pool_metadata_from_tabs(suspect.tabs)
 	truth_bundle["seed_trace"] = seed_trace.duplicate(true)
+	suspect.truth_bundle = truth_bundle.duplicate(true)
 	suspect.debug["seed_trace"] = seed_trace.duplicate(true)
 
 	fail_stage = "CHARGE_SHEET"
@@ -311,7 +313,8 @@ static func generate(run_seed_u64: int, run_seed_text: String, suspect_index: in
 	_trace_push(gen_trace, "CHARGE_SHEET", {
 		"case_id": str((suspect.charge_sheet as Dictionary).get("case_id", "")),
 	})
-	suspect.debug["case_engine_truth_bundle"] = truth_bundle
+	suspect.truth_bundle = truth_bundle.duplicate(true)
+	suspect.debug["case_engine_truth_bundle"] = suspect.truth_bundle.duplicate(true)
 	suspect.debug["reroll_index"] = reroll_index
 
 	fail_stage = "FINALIZE"
@@ -1012,6 +1015,16 @@ static func _case_engine_tab_pool_seed_trace(run_seed_u64: int, suspect_index: i
 		CaseEngineTypes.TAB_PROFILE,
 	]:
 		out[tab] = SeedUtil.hex16(_case_engine_tab_pool_seed_value(run_seed_u64, suspect_index, reroll_index, str(tab)))
+	return out
+
+static func _tab_pool_metadata_from_tabs(tabs: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for tab_id in _sorted_dictionary_keys(tabs):
+		var tab_data: Dictionary = tabs.get(tab_id, {}) as Dictionary
+		out[tab_id] = {
+			"tab": str(tab_data.get("tab", "")),
+			"fact_pool_seed_u64": int(tab_data.get("fact_pool_seed_u64", 0)),
+		}
 	return out
 
 static func _required_skeleton_fact_types(skeleton: Dictionary) -> Array[String]:

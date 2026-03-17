@@ -131,6 +131,20 @@ const REQUIRED_SKELETON_KEYS: Array[String] = [
 	"chains",
 ]
 
+const REQUIRED_SUSPECT_KEYS: Array[String] = [
+	"id",
+	"silhouette_label",
+	"charge_sheet",
+	"truth_bundle",
+	"tabs",
+	"deadline_s",
+]
+
+const REQUIRED_SUSPECT_TAB_KEYS: Array[String] = [
+	"tab",
+	"facts",
+]
+
 const TRUTH_GRAPH_REQUIRED_KEYS: Array[String] = [
 	"schema_version",
 	"culpability",
@@ -166,6 +180,48 @@ const TRUTH_GRAPH_RELATIONSHIP_KEYS: Array[String] = ["id", "contact_role", "con
 
 static func profile_card_visible_fields() -> Array[String]:
 	return PROFILE_CARD_VISIBLE_FIELDS.duplicate()
+
+static func validate_suspect_contract(suspect: Dictionary) -> Array[String]:
+	var out: Array[String] = []
+	if suspect.is_empty():
+		out.append("MISSING_SUSPECT")
+		return out
+	for key in REQUIRED_SUSPECT_KEYS:
+		if not suspect.has(key):
+			out.append("MISSING_SUSPECT_KEY:%s" % key)
+	if str(suspect.get("id", "")).strip_edges() == "":
+		out.append("EMPTY_SUSPECT_ID")
+	if str(suspect.get("silhouette_label", "")).strip_edges() == "":
+		out.append("EMPTY_SUSPECT_SILHOUETTE")
+	if int(suspect.get("deadline_s", 0)) <= 0:
+		out.append("EMPTY_SUSPECT_DEADLINE")
+	var charge_sheet: Dictionary = suspect.get("charge_sheet", {}) as Dictionary
+	for key in ["case_id", "title", "charges", "brief"]:
+		if not charge_sheet.has(key):
+			out.append("BAD_SUSPECT_CHARGE_SHEET:%s" % key)
+	var truth_bundle: Dictionary = suspect.get("truth_bundle", {}) as Dictionary
+	if truth_bundle.is_empty():
+		out.append("MISSING_SUSPECT_TRUTH_BUNDLE")
+	else:
+		var truth_errors: Array[String] = validate_truth_graph(truth_bundle)
+		if not truth_errors.is_empty():
+			out.append("BAD_SUSPECT_TRUTH_BUNDLE:%s" % truth_errors[0])
+	var tabs: Dictionary = suspect.get("tabs", {}) as Dictionary
+	for tab_id in ["ALIBI", "TIMELINE", "MOTIVE", "CAPABILITY", "PROFILE"]:
+		if not tabs.has(tab_id):
+			out.append("MISSING_SUSPECT_TAB:%s" % tab_id)
+			continue
+		var tab_data: Dictionary = tabs.get(tab_id, {}) as Dictionary
+		for key in REQUIRED_SUSPECT_TAB_KEYS:
+			if not tab_data.has(key):
+				out.append("BAD_SUSPECT_TAB:%s.%s" % [tab_id, key])
+		if str(tab_data.get("tab", "")) != tab_id:
+			out.append("BAD_SUSPECT_TAB_ID:%s" % tab_id)
+		if not tab_data.has("fact_pool_seed_u64") and not tab_data.has("fact_pool_seed_u64_hex"):
+			out.append("BAD_SUSPECT_TAB:%s.fact_pool_seed" % tab_id)
+		if not (tab_data.get("facts", []) is Array):
+			out.append("BAD_SUSPECT_TAB_FACTS:%s" % tab_id)
+	return out
 
 static func validate_truth_graph(truth_bundle: Dictionary) -> Array[String]:
 	var out: Array[String] = []

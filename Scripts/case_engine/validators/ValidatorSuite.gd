@@ -35,13 +35,20 @@ static func validate_case(case_payload: Dictionary) -> Dictionary:
 	_require_key(items, suspect, "id", "Missing suspect.id")
 	_require_key(items, suspect, "charge_sheet", "Missing suspect.charge_sheet")
 	_require_key(items, suspect, "tabs", "Missing suspect.tabs")
+	var suspect_contract_errors: Array[String] = CaseEngineContracts.validate_suspect_contract(suspect)
+	if not suspect_contract_errors.is_empty():
+		items.append(_reject("BAD_SUSPECT_CONTRACT", str(suspect_contract_errors[0])))
+		return _finalize(items)
 
 	_scan_no_guilt_tells(items, suspect)
 
 	var truth_bundle: Dictionary = case_payload.get("truth_bundle", {}) as Dictionary
+	var suspect_truth_bundle: Dictionary = suspect.get("truth_bundle", {}) as Dictionary
+	if not truth_bundle.is_empty() and not suspect_truth_bundle.is_empty() and truth_bundle != suspect_truth_bundle:
+		items.append(_reject("TRUTH_BUNDLE_MISMATCH", "Wrapper truth bundle diverged from suspect.truth_bundle."))
+		return _finalize(items)
 	if truth_bundle.is_empty():
-		var dbg: Dictionary = suspect.get("debug", {}) as Dictionary
-		truth_bundle = dbg.get("case_engine_truth_bundle", {}) as Dictionary
+		truth_bundle = suspect_truth_bundle
 	if truth_bundle.is_empty():
 		items.append(_reject("NO_TRUTH_BUNDLE", "Missing truth bundle (truth-first violated)."))
 		return _finalize(items)

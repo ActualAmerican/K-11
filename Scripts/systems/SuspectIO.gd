@@ -17,6 +17,7 @@ static func to_dict(s: SuspectData) -> Dictionary:
 	d["silhouette_label"] = String(s.silhouette_label)
 	d["deadline_s"] = int(s.deadline_s)
 	d["truth_guilty"] = bool(s.truth_guilty)
+	d["truth_bundle"] = _deep_copy_dict(s.truth_bundle)
 
 	d["charge_sheet"] = _deep_copy_dict(s.charge_sheet)
 	d["tabs"] = _deep_copy_dict(s.tabs)
@@ -42,6 +43,10 @@ static func from_dict(d: Dictionary) -> SuspectData:
 	s.silhouette_label = String(d.get("silhouette_label", ""))
 	s.deadline_s = int(d.get("deadline_s", 0))
 	s.truth_guilty = bool(d.get("truth_guilty", false))
+	s.truth_bundle = _ensure_dict(d.get("truth_bundle", {}))
+	if s.truth_bundle.is_empty():
+		var debug_dict: Dictionary = _ensure_dict(d.get("debug", {}))
+		s.truth_bundle = _ensure_dict(debug_dict.get("case_engine_truth_bundle", {}))
 
 	s.charge_sheet = _ensure_dict(d.get("charge_sheet", {}))
 	s.tabs = _ensure_dict(d.get("tabs", {}))
@@ -54,11 +59,70 @@ static func to_json(s: SuspectData, pretty: bool = true) -> String:
 	var d := to_dict(s)
 	return _stringify(d, pretty)
 
+static func to_payload_dict(s: SuspectData, existing_payload: Dictionary = {}) -> Dictionary:
+	var payload: Dictionary = _deep_copy_dict(existing_payload)
+	var suspect_dict: Dictionary = to_dict(s)
+	var truth_bundle: Dictionary = _deep_copy_dict(s.truth_bundle)
+	payload["ok"] = true
+	payload["run_seed_text"] = String(s.run_seed_text)
+	payload["run_seed_u64_hex"] = SeedUtil.hex16(int(s.run_seed_u64))
+	payload["suspect_index"] = int(s.suspect_index)
+	payload["suspect_seed_u64_hex"] = SeedUtil.hex16(int(s.suspect_seed_u64))
+	if not payload.has("reroll_index"):
+		payload["reroll_index"] = 0
+	payload["suspect"] = suspect_dict
+	payload["truth_bundle"] = truth_bundle
+
+	if str(payload.get("fingerprint", "")) == "":
+		payload["fingerprint"] = _case_payload_fingerprint(truth_bundle)
+	if not payload.has("seed_trace"):
+		var seed_trace: Dictionary = _ensure_dict(truth_bundle.get("seed_trace", {}))
+		if seed_trace.is_empty():
+			seed_trace = _ensure_dict((s.debug.get("seed_trace", {}) if typeof(s.debug) == TYPE_DICTIONARY else {}))
+		if not seed_trace.is_empty():
+			payload["seed_trace"] = seed_trace
+	var variant_skeleton_id: String = str(truth_bundle.get("variant_skeleton_id", ""))
+	if variant_skeleton_id != "":
+		payload["variant_skeleton_id"] = variant_skeleton_id
+	var conflict_audit: Dictionary = _ensure_dict(truth_bundle.get("conflict_audit", {}))
+	if not conflict_audit.is_empty():
+		payload["conflict_audit"] = conflict_audit
+	var profile_bundle: Dictionary = _ensure_dict(truth_bundle.get("profile_bundle", {}))
+	if not profile_bundle.is_empty():
+		payload["profile_bundle"] = profile_bundle
+	return payload
+
+static func payload_to_json(s: SuspectData, existing_payload: Dictionary = {}, pretty: bool = true) -> String:
+	return _stringify(to_payload_dict(s, existing_payload), pretty)
+
 static func from_json(text: String) -> SuspectData:
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return null
-	return from_dict(parsed as Dictionary)
+	return from_payload_dict(parsed as Dictionary)
+
+static func payload_from_json(text: String) -> Dictionary:
+	var parsed: Variant = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		return {}
+	var s: SuspectData = from_payload_dict(parsed as Dictionary)
+	if s == null:
+		return {}
+	return to_payload_dict(s, parsed as Dictionary)
+
+static func from_payload_dict(d: Dictionary) -> SuspectData:
+	if _looks_like_payload_wrapper(d):
+		var payload_suspect: Dictionary = _ensure_dict(d.get("suspect", {}))
+		if payload_suspect.is_empty():
+			return null
+		var s: SuspectData = from_dict(payload_suspect)
+		if s == null:
+			return null
+		var wrapper_truth_bundle: Dictionary = _ensure_dict(d.get("truth_bundle", {}))
+		if not wrapper_truth_bundle.is_empty():
+			s.truth_bundle = wrapper_truth_bundle
+		return s
+	return from_dict(d)
 
 static func fingerprint_suspect(s: SuspectData) -> String:
 	return fingerprint_dict(to_dict(s))
@@ -67,7 +131,11 @@ static func fingerprint_json(text: String) -> String:
 	var parsed: Variant = JSON.parse_string(text)
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return ""
-	var s: SuspectData = from_dict(parsed as Dictionary)
+	var dict: Dictionary = parsed as Dictionary
+	var payload_fp: String = str(dict.get("fingerprint", ""))
+	if payload_fp != "":
+		return payload_fp
+	var s: SuspectData = from_payload_dict(dict)
 	if s == null:
 		return ""
 	return fingerprint_suspect(s)
@@ -109,6 +177,20 @@ static func _sha256_hex(text: String) -> String:
 	ctx.start(HashingContext.HASH_SHA256)
 	ctx.update(text.to_utf8_buffer())
 	return ctx.finish().hex_encode()
+
+static func _case_payload_fingerprint(truth_bundle: Dictionary) -> String:
+	var facts: Dictionary = _ensure_dict(truth_bundle.get("facts", {}))
+	var fp_basis: Dictionary = {
+		"crime_family": str(truth_bundle.get("crime_family", "")),
+		"crime_type": str(truth_bundle.get("crime_type", "")),
+		"opportunity": str(truth_bundle.get("opportunity", "")),
+		"alibi_truth": str(truth_bundle.get("alibi_truth", "")),
+		"motive": str(truth_bundle.get("motive", "")),
+		"relationship": str(truth_bundle.get("relationship", "")),
+		"location": str(facts.get("location", "")),
+		"time_window": str(facts.get("time_window", "")),
+	}
+	return fingerprint_dict(fp_basis)
 
 static func _canonicalize(v: Variant) -> Variant:
 	match typeof(v):
@@ -172,6 +254,12 @@ static func _ensure_parent_dir(path: String) -> void:
 	if dir == "":
 		return
 	DirAccess.make_dir_recursive_absolute(dir)
+
+static func _looks_like_payload_wrapper(d: Dictionary) -> bool:
+	if d.has("suspect"):
+		var suspect_value: Variant = d.get("suspect", null)
+		return typeof(suspect_value) == TYPE_DICTIONARY
+	return false
 
 static func _ensure_dict(v: Variant) -> Dictionary:
 	if typeof(v) == TYPE_DICTIONARY:

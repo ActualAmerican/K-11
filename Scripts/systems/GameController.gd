@@ -54,6 +54,7 @@ var suspect_index: int = 0
 var suspect_seed_value: int = 0
 var suspect_seed_text: String = ""
 var current_suspect: SuspectData = null
+var _dev_case_payload: Dictionary = {}
 # --- Evidence UI (5.2) ---
 var _tabs_bar: Node = null
 var _evidence_panel: Control = null
@@ -2580,8 +2581,11 @@ func _dev_export_suspect() -> void:
 	if current_suspect == null:
 		_log("SUSPECT_EXPORT: no current suspect")
 		return
-	var json: String = SuspectIO.to_json(current_suspect, true)
+	var payload: Dictionary = SuspectIO.to_payload_dict(current_suspect, _dev_case_payload)
+	_dev_case_payload = payload.duplicate(true)
+	var json: String = JSON.stringify(payload, "\t", true)
 	var fp_obj: String = SuspectIO.fingerprint_suspect(current_suspect)
+	var fp_payload: String = str(payload.get("fingerprint", ""))
 	var fp_json: String = SuspectIO.fingerprint_json(json)
 	DisplayServer.clipboard_set(json)
 	var fp_clip: String = SuspectIO.fingerprint_json(DisplayServer.clipboard_get())
@@ -2592,35 +2596,38 @@ func _dev_export_suspect() -> void:
 	var ok_last: bool = SuspectIO.write_text(last_path, json)
 	if ok:
 		if ok_last:
-			_log("SUSPECT_EXPORT ok idx=%d id=%s truth=%s fp_obj=%s fp_json=%s fp_clip=%s -> %s + last_suspect.json (and clipboard)" % [
+			_log("SUSPECT_EXPORT ok idx=%d id=%s truth=%s fp_payload=%s fp_json=%s fp_clip=%s fp_obj=%s -> %s + last_suspect.json (and clipboard)" % [
 				suspect_index,
 				current_suspect.short_id(),
 				current_suspect.truth_label(),
-				fp_obj.substr(0, 12),
+				fp_payload.substr(0, 12),
 				fp_json.substr(0, 12),
 				fp_clip.substr(0, 12),
+				fp_obj.substr(0, 12),
 				path
 			])
 		else:
-			_log("SUSPECT_EXPORT ok idx=%d id=%s truth=%s fp_obj=%s fp_json=%s fp_clip=%s -> %s (last_suspect.json FAILED, clipboard set)" % [
+			_log("SUSPECT_EXPORT ok idx=%d id=%s truth=%s fp_payload=%s fp_json=%s fp_clip=%s fp_obj=%s -> %s (last_suspect.json FAILED, clipboard set)" % [
 				suspect_index,
 				current_suspect.short_id(),
 				current_suspect.truth_label(),
-				fp_obj.substr(0, 12),
+				fp_payload.substr(0, 12),
 				fp_json.substr(0, 12),
 				fp_clip.substr(0, 12),
+				fp_obj.substr(0, 12),
 				path
 			])
 	else:
-		_log("SUSPECT_EXPORT FAILED fp_obj=%s fp_json=%s fp_clip=%s -> %s (clipboard still set)" % [
-			fp_obj.substr(0, 12),
+		_log("SUSPECT_EXPORT FAILED fp_payload=%s fp_json=%s fp_clip=%s fp_obj=%s -> %s (clipboard still set)" % [
+			fp_payload.substr(0, 12),
 			fp_json.substr(0, 12),
 			fp_clip.substr(0, 12),
+			fp_obj.substr(0, 12),
 			path
 		])
-	if fp_obj != "" and fp_json != "" and fp_clip != "" and (fp_obj != fp_json or fp_json != fp_clip):
-		_log("SUSPECT_EXPORT WARN mismatch fp_obj=%s fp_json=%s fp_clip=%s" % [
-			fp_obj.substr(0, 12),
+	if fp_payload != "" and fp_json != "" and fp_clip != "" and (fp_payload != fp_json or fp_json != fp_clip):
+		_log("SUSPECT_EXPORT WARN mismatch fp_payload=%s fp_json=%s fp_clip=%s" % [
+			fp_payload.substr(0, 12),
 			fp_json.substr(0, 12),
 			fp_clip.substr(0, 12)
 		])
@@ -2633,26 +2640,30 @@ func _dev_import_suspect_clipboard_or_prompt() -> void:
 		return
 	var clip: String = DisplayServer.clipboard_get()
 	var fp_src: String = SuspectIO.fingerprint_json(clip)
+	var payload: Dictionary = SuspectIO.payload_from_json(clip)
 	var s: SuspectData = SuspectIO.from_json(clip)
 	if s != null:
-		_apply_imported_suspect(s, "clipboard")
+		_apply_imported_suspect(s, "clipboard", payload)
 		var fp_obj: String = SuspectIO.fingerprint_suspect(s)
-		_log("SUSPECT_IMPORT ok src=clipboard idx=%d id=%s truth=%s fp_src=%s fp_obj=%s" % [
+		var fp_payload: String = str(payload.get("fingerprint", ""))
+		_log("SUSPECT_IMPORT ok src=clipboard idx=%d id=%s truth=%s fp_src=%s fp_payload=%s fp_obj=%s" % [
 			s.suspect_index,
 			s.short_id(),
 			s.truth_label(),
 			fp_src.substr(0, 12),
+			fp_payload.substr(0, 12),
 			fp_obj.substr(0, 12)
 		])
-		if fp_src != "" and fp_obj != "" and fp_src != fp_obj:
-			_log("SUSPECT_IMPORT WARN fp_src=%s fp_obj=%s" % [fp_src.substr(0, 12), fp_obj.substr(0, 12)])
+		if fp_src != "" and fp_payload != "" and fp_src != fp_payload:
+			_log("SUSPECT_IMPORT WARN fp_src=%s fp_payload=%s" % [fp_src.substr(0, 12), fp_payload.substr(0, 12)])
 		return
 
 	var last_path: String = "user://dev/last_suspect.json"
 	var last_text: String = SuspectIO.read_text(last_path)
+	var last_payload: Dictionary = SuspectIO.payload_from_json(last_text)
 	var s2: SuspectData = SuspectIO.from_json(last_text)
 	if s2 != null:
-		_apply_imported_suspect(s2, "file:last_suspect")
+		_apply_imported_suspect(s2, "file:last_suspect", last_payload)
 		return
 
 	_log("SUSPECT_IMPORT: invalid/empty clipboard JSON -> opening paste dialog")
@@ -2665,7 +2676,7 @@ func _install_suspect_import_prompt() -> void:
 		return
 
 	_suspect_import_dialog = AcceptDialog.new()
-	_suspect_import_dialog.title = "Import Suspect JSON"
+	_suspect_import_dialog.title = "Import Case JSON"
 	_suspect_import_dialog.exclusive = true
 	_suspect_import_dialog.always_on_top = true
 	_suspect_import_dialog.transient = true
@@ -2691,7 +2702,7 @@ func _install_suspect_import_prompt() -> void:
 	container.add_child(vbox)
 
 	_suspect_import_label = Label.new()
-	_suspect_import_label.text = "Paste suspect JSON (must include schema_version=%d)" % SuspectData.SCHEMA_VERSION
+	_suspect_import_label.text = "Paste case payload or suspect JSON (suspect schema_version=%d)" % SuspectData.SCHEMA_VERSION
 	_suspect_import_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	vbox.add_child(_suspect_import_label)
 
@@ -2754,14 +2765,15 @@ func _suspect_import_activate() -> void:
 
 func _on_suspect_import_confirmed() -> void:
 	var text: String = _suspect_import_text.text
+	var payload: Dictionary = SuspectIO.payload_from_json(text)
 	var s: SuspectData = SuspectIO.from_json(text)
 	if s == null:
 		if is_instance_valid(_suspect_import_error_label):
-			_suspect_import_error_label.text = "Invalid JSON or schema_version mismatch (expected schema_version=%d)." % SuspectData.SCHEMA_VERSION
-		_log("SUSPECT_IMPORT FAILED: invalid JSON or schema_version mismatch")
+			_suspect_import_error_label.text = "Invalid case payload / suspect JSON, or schema_version mismatch (expected suspect schema_version=%d)." % SuspectData.SCHEMA_VERSION
+		_log("SUSPECT_IMPORT FAILED: invalid case payload / suspect JSON or schema_version mismatch")
 		call_deferred("_suspect_import_focus_and_select_all")
 		return
-	_apply_imported_suspect(s, "paste")
+	_apply_imported_suspect(s, "paste", payload)
 	_suspect_import_dialog.hide()
 	_on_suspect_import_closed()
 
@@ -2771,8 +2783,9 @@ func _on_suspect_import_closed() -> void:
 	if _suspect_import_prev_hud_visible:
 		_set_dev_hud_visible(true)
 
-func _apply_imported_suspect(s: SuspectData, source: String) -> void:
+func _apply_imported_suspect(s: SuspectData, source: String, payload: Dictionary = {}) -> void:
 	current_suspect = s
+	_dev_case_payload = SuspectIO.to_payload_dict(s, payload)
 
 	run_seed_text = s.run_seed_text
 	run_seed_u64 = s.run_seed_u64
@@ -2781,12 +2794,43 @@ func _apply_imported_suspect(s: SuspectData, source: String) -> void:
 	suspect_index = s.suspect_index
 	suspect_seed_value = s.suspect_seed_u64
 	suspect_seed_text = SeedUtil.format_suspect_seed_u64(suspect_seed_value)
+	_last_suspect_gen_ms = 0.0
+	_ledger_case_active = false
+
+	var imported_deadline_s: int = maxi(int(s.deadline_s), 0)
+	_deadline_stage_durations = [imported_deadline_s]
+	_deadline_stage_index = 0
+	_deadline_stage_count = 1
+	_deadline_total_s = float(imported_deadline_s)
+	_deadline_left_s = _deadline_total_s
+	_deadline_expired = imported_deadline_s <= 0
+	_deadline_active = imported_deadline_s > 0
+	_phone_forced = false
+	_tick_1hz_accum = 0.0
+
+	if _phone != null:
+		_phone.stop()
+	if _noise_sys != null and _noise_sys.has_method("set_context"):
+		_noise_sys.call("set_context", {
+			"suspect_index": suspect_index,
+			"suspect_id": current_suspect.short_id() if current_suspect != null else "n/a",
+		})
+	if _clock != null and current_suspect != null:
+		_clock_rng.seed = int(current_suspect.suspect_seed_u64)
+
+	_reset_verdict_flow()
 
 	var fp: String = SuspectIO.fingerprint_suspect(s)
 	var sid: String = s.short_id()
 	var t: String = s.truth_label()
-	_log("SUSPECT_IMPORT ok src=%s fp=%s idx=%d id=%s truth=%s" % [source, fp.substr(0, 12), suspect_index, sid, t])
-	_update_hud()
+	if is_inside_tree():
+		_log("SUSPECT_IMPORT ok src=%s fp=%s idx=%d id=%s truth=%s" % [source, fp.substr(0, 12), suspect_index, sid, t])
+		if overlay_open and overlay_id == OVERLAY_EVIDENCE_ID:
+			_refresh_evidence_overlay(_evidence_active_tab if _evidence_active_tab != "" else "ALIBI")
+		elif overlay_open and overlay_id == OVERLAY_CASE_FOLDER_ID:
+			close_overlay()
+			open_overlay(OVERLAY_CASE_FOLDER_ID, _build_case_folder_payload())
+		_update_hud()
 
 func _state_name(s: int) -> String:
 	match s:
@@ -3097,6 +3141,7 @@ func _refresh_suspect_seed() -> void:
 		dl = time_policy.get_deadline_s(suspect_index)
 	if current_suspect != null:
 		current_suspect.deadline_s = dl
+		_dev_case_payload = SuspectIO.to_payload_dict(current_suspect, {})
 	_deadline_stage_durations = []
 	_deadline_stage_index = 0
 	_deadline_stage_count = 0

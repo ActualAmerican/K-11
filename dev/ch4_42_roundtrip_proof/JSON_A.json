@@ -1,0 +1,1061 @@
+{
+	"charge_sheet": {
+		"brief": "Pattern review indicates fraud activity during service_window with pressure around coercion.",
+		"case_id": "CE-S-f10423456a6d",
+		"charges": [
+			"Policy breach",
+			"Operational misconduct"
+		],
+		"title": "Invoice Manipulation investigation"
+	},
+	"deadline_s": 89,
+	"debug": {
+		"case_engine_truth_bundle": {
+			"alibi_truth": "verified",
+			"conflict_audit": {
+				"failed_groups": [],
+				"groups": {
+					"alibi_presence": {
+						"breaker_id": "alibi_04_alibi_witness",
+						"members": [
+							{
+								"anchor": "alibi",
+								"fact_id": "alibi_04_alibi_witness",
+								"fact_type": "ALIBI_WITNESS",
+								"reliability": "SOLID"
+							}
+						],
+						"prefer_anchor": "",
+						"prefer_fact_type": "",
+						"repaired": true
+					},
+					"capability_scope": {
+						"breaker_id": "capability_02_capability_access",
+						"members": [
+							{
+								"anchor": "capability",
+								"fact_id": "capability_02_capability_access",
+								"fact_type": "CAPABILITY_ACCESS",
+								"reliability": "SOLID"
+							}
+						],
+						"prefer_anchor": "",
+						"prefer_fact_type": "",
+						"repaired": true
+					},
+					"cg_invoice_pressure": {
+						"breaker_id": "motive_03_motive_pressure",
+						"members": [
+							{
+								"anchor": "motive",
+								"fact_id": "motive_03_motive_pressure",
+								"fact_type": "MOTIVE_PRESSURE",
+								"reliability": "SOLID"
+							},
+							{
+								"anchor": "profile",
+								"fact_id": "profile_05_profile_assignment_detail",
+								"fact_type": "PROFILE_BEHAVIOR",
+								"reliability": "SOLID"
+							}
+						],
+						"prefer_anchor": "motive",
+						"prefer_fact_type": "MOTIVE_PRESSURE",
+						"repaired": true
+					},
+					"cg_invoice_statement": {
+						"breaker_id": "timeline_00_timeline_anchor_exit",
+						"members": [
+							{
+								"anchor": "timeline",
+								"fact_id": "timeline_00_timeline_anchor_exit",
+								"fact_type": "TIMELINE_ANCHOR",
+								"reliability": "SOLID"
+							},
+							{
+								"anchor": "alibi",
+								"fact_id": "alibi_01_alibi_statement",
+								"fact_type": "ALIBI_STATEMENT",
+								"reliability": "SOLID"
+							}
+						],
+						"prefer_anchor": "timeline",
+						"prefer_fact_type": "TIMELINE_ANCHOR",
+						"repaired": true
+					},
+					"motive_driver": {
+						"breaker_id": "motive_06_motive_relationship_pattern",
+						"members": [
+							{
+								"anchor": "relationship",
+								"fact_id": "motive_06_motive_relationship_pattern",
+								"fact_type": "MOTIVE_RELATIONSHIP",
+								"reliability": "SOLID"
+							}
+						],
+						"prefer_anchor": "",
+						"prefer_fact_type": "",
+						"repaired": true
+					}
+				},
+				"repaired_groups": [
+					"alibi_presence",
+					"capability_scope",
+					"cg_invoice_pressure",
+					"cg_invoice_statement",
+					"motive_driver"
+				],
+				"salvaged_missing_conflict_group_count": 0,
+				"salvaged_unresolvable_conflict_group_count": 5
+			},
+			"crime_family": "fraud",
+			"crime_type": "invoice_manipulation",
+			"facts": {
+				"age_band": "35_49",
+				"age_years": 39,
+				"alibi_place": "break_room",
+				"assignment_label": "Dispatch Rotation",
+				"birth_day": 11,
+				"birth_month": "December",
+				"contact_name": "Vendor Rep Marlowe Kessler",
+				"contact_role": "vendor",
+				"coworker_name": "Victor Bennett",
+				"criminal_history_band": "minor_flags",
+				"criminal_history_label": "Minor Administrative Flags",
+				"dependents_band": "0",
+				"family_status": "partnered",
+				"first_name": "Victor",
+				"full_name": "Victor Quinn",
+				"human_assignment": "Dispatch Rotation",
+				"human_birthday": "December 11",
+				"human_criminal_history": "Minor Administrative Flags",
+				"human_dependents": "0",
+				"human_occupation": "Routing Specialist",
+				"human_role_family": "Operations",
+				"human_schedule": "Day Shift",
+				"human_temperament": "Guarded",
+				"income_proxy": "mid",
+				"last_name": "Quinn",
+				"life_stage": "adult",
+				"location": "storage_wing",
+				"occupation_id": "routing_specialist",
+				"occupation_label": "Routing Specialist",
+				"role_family": "ops",
+				"role_family_label": "Operations",
+				"schedule_label": "Day Shift",
+				"schedule_tag": "day_shift",
+				"shift": "A",
+				"supervisor_name": "Lead Farah Visser",
+				"team": "routing",
+				"temperament": "guarded",
+				"temperament_label": "Guarded",
+				"tenure_band": "established",
+				"tenure_label": "Established",
+				"time_anchor": "16:50",
+				"time_window": "handoff_gap",
+				"tool": "badge_terminal",
+				"witness_name": "Yasmin Abbas"
+			},
+			"guilt_state": "INNOCENT",
+			"motive": "coercion",
+			"opportunity": "service_window",
+			"profile_bundle": {
+				"access_tags": [
+					"keycard_access",
+					"after_hours_access"
+				],
+				"age_band": "35_49",
+				"age_years": 39,
+				"alibi_place_tags": [
+					"break_room",
+					"front_office",
+					"ledger_office"
+				],
+				"assignment_label": "Dispatch Rotation",
+				"birth_day": 11,
+				"birth_month": "December",
+				"criminal_history_band": "minor_flags",
+				"criminal_history_label": "Minor Administrative Flags",
+				"dependents_band": "0",
+				"family_status": "partnered",
+				"first_name": "Victor",
+				"full_name": "Victor Quinn",
+				"income_proxy": "mid",
+				"last_name": "Quinn",
+				"latent_axes": {
+					"cognitive_load": "mid",
+					"composure": "mid",
+					"defensiveness": "mid",
+					"narrative_control": "high",
+					"stress_reactivity": "mid",
+					"volatility": "low"
+				},
+				"life_stage": "adult",
+				"location_tags": [
+					"archives",
+					"dispatch_desk",
+					"storage_wing",
+					"service_corridor",
+					"front_office"
+				],
+				"occupation_id": "routing_specialist",
+				"occupation_label": "Routing Specialist",
+				"role_family": "ops",
+				"role_family_label": "Operations",
+				"role_tags": [
+					"operations",
+					"internal_staff",
+					"routing",
+					"handoff"
+				],
+				"schedule_label": "Day Shift",
+				"schedule_tag": "day_shift",
+				"temperament": "guarded",
+				"temperament_label": "Guarded",
+				"tenure_band": "established",
+				"tenure_label": "Established",
+				"time_window_tags": [
+					"shift_start",
+					"midday",
+					"handoff_gap"
+				],
+				"tool_tags": [
+					"ledger_console",
+					"badge_terminal",
+					"maintenance_tablet",
+					"dispatch_console"
+				],
+				"typical_contact_roles": [
+					"coworker",
+					"supervisor",
+					"vendor",
+					"friend",
+					"family"
+				]
+			},
+			"relationship": "vendor_contact",
+			"relationship_graph": {
+				"edges": [
+					{
+						"a": "E_SUS",
+						"b": "E_SUP",
+						"type": "reports_to"
+					},
+					{
+						"a": "E_SUS",
+						"b": "E_COW",
+						"type": "coworker"
+					},
+					{
+						"a": "E_SUS",
+						"b": "E_WIT",
+						"type": "mentioned_by"
+					},
+					{
+						"a": "E_SUS",
+						"b": "E_VEN",
+						"type": "contact"
+					}
+				],
+				"nodes": {
+					"E_COW": {
+						"id": "E_COW",
+						"name_id": "coworker:victor:bennett:e_cow",
+						"name_text": "Victor Bennett",
+						"role": "coworker"
+					},
+					"E_FAM": {
+						"id": "E_FAM",
+						"name_id": "family:peter:locke:e_fam",
+						"name_text": "Family Contact Peter Locke",
+						"role": "family"
+					},
+					"E_SUP": {
+						"id": "E_SUP",
+						"name_id": "supervisor:farah:visser:e_sup",
+						"name_text": "Lead Farah Visser",
+						"role": "supervisor"
+					},
+					"E_VEN": {
+						"id": "E_VEN",
+						"name_id": "vendor:marlowe:kessler:e_ven",
+						"name_text": "Vendor Rep Marlowe Kessler",
+						"role": "vendor"
+					},
+					"E_WIT": {
+						"id": "E_WIT",
+						"name_id": "witness:yasmin:abbas:e_wit",
+						"name_text": "Yasmin Abbas",
+						"role": "witness"
+					}
+				}
+			},
+			"salvage_audit": {
+				"salvaged_anchor_names": [],
+				"salvaged_anchor_only_corrupted_count": 0,
+				"salvaged_missing_conflict_group_count": 0,
+				"salvaged_unresolvable_conflict_group_count": 5
+			},
+			"seed_trace": {
+				"core_seed_u64_hex": "509035db620a8e73",
+				"named_subseeds": {
+					"case_engine_core": "509035db620a8e73",
+					"case_engine_tab_pool:ALIBI": "0eb0587dceba518e",
+					"case_engine_tab_pool:CAPABILITY": "322b4a9a7d5aa161",
+					"case_engine_tab_pool:MOTIVE": "21935abc9d837f12",
+					"case_engine_tab_pool:PROFILE": "2337203bd500eb7c",
+					"case_engine_tab_pool:TIMELINE": "602bd88acbb417c8",
+					"charge_sheet": "65be014aafc24038",
+					"deadline": "7b8253c8e2e4a9d1",
+					"fact_pool:ALIBI": "38ed52f2e6424818",
+					"fact_pool:CAPABILITY": "1acdcf60fb0be738",
+					"fact_pool:MOTIVE": "7d889f4168e6c800",
+					"fact_pool:PROFILE": "07a6d1291c8e3cee",
+					"fact_pool:TIMELINE": "48817a89a0873039",
+					"silhouette": "5b104eced4d5b148",
+					"truth": "0a517c49c9efa407"
+				},
+				"reroll_index": 0,
+				"run_seed_input_text": "K11-1LU",
+				"run_seed_text": "K11-1LU",
+				"run_seed_u64_hex": "0000000000000822",
+				"suspect_index": 0,
+				"suspect_seed_u64_hex": "0954f10423456a6d"
+			},
+			"tab_pools": {
+				"ALIBI": {
+					"fact_pool_seed_u64": 1058443209794539918,
+					"tab": "ALIBI"
+				},
+				"CAPABILITY": {
+					"fact_pool_seed_u64": 3615065153283465569,
+					"tab": "CAPABILITY"
+				},
+				"MOTIVE": {
+					"fact_pool_seed_u64": 2419377190971080466,
+					"tab": "MOTIVE"
+				},
+				"PROFILE": {
+					"fact_pool_seed_u64": 2537532356395330428,
+					"tab": "PROFILE"
+				},
+				"TIMELINE": {
+					"fact_pool_seed_u64": 6929870542274303944,
+					"tab": "TIMELINE"
+				}
+			},
+			"truth_graph": {
+				"alibi": {
+					"corroboration_mode": "mixed",
+					"place": "break_room",
+					"strength_band": "robust",
+					"truth": "verified"
+				},
+				"capability": {
+					"access_tags": [
+						"keycard_access",
+						"after_hours_access"
+					],
+					"exposure_band": "LOW_VISIBILITY",
+					"location_tags": [
+						"archives",
+						"dispatch_desk",
+						"storage_wing",
+						"service_corridor",
+						"front_office"
+					],
+					"skill_tags": [
+						"process_routine",
+						"records_handling",
+						"console_operations",
+						"field_operations",
+						"credential_navigation",
+						"records_navigation",
+						"back_area_routine"
+					],
+					"tool": "badge_terminal"
+				},
+				"crime": {
+					"family": "fraud",
+					"method_class": "approval_abuse",
+					"type": "invoice_manipulation"
+				},
+				"culpability": {
+					"cover_posture": "confused_compliance",
+					"pressure_bias": "external_scrutiny",
+					"state": "INNOCENT"
+				},
+				"motive": {
+					"class": "leverage",
+					"id": "coercion",
+					"intensity_band": "contained"
+				},
+				"opportunity": {
+					"class": "routine_cover",
+					"id": "service_window",
+					"tool": "badge_terminal"
+				},
+				"relationship": {
+					"contact_name": "Vendor Rep Marlowe Kessler",
+					"contact_node_id": "E_VEN",
+					"contact_role": "vendor",
+					"id": "vendor_contact"
+				},
+				"schema_version": 1,
+				"timeline": {
+					"anchor": "16:50",
+					"location": "storage_wing",
+					"window": "handoff_gap"
+				},
+				"twist_tags": [
+					"ADMIN_ERROR"
+				]
+			},
+			"twist_tags": [
+				"ADMIN_ERROR"
+			],
+			"variant_required_anchors": [
+				"timeline",
+				"alibi",
+				"capability",
+				"motive"
+			],
+			"variant_required_fact_types": [
+				"TIMELINE_ANCHOR",
+				"ALIBI_STATEMENT",
+				"CAPABILITY_ACCESS",
+				"MOTIVE_PRESSURE"
+			],
+			"variant_skeleton_id": "fraud_invoice_manipulation_v0_b"
+		},
+		"reroll_index": 0,
+		"seed_trace": {
+			"core_seed_u64_hex": "509035db620a8e73",
+			"named_subseeds": {
+				"case_engine_core": "509035db620a8e73",
+				"case_engine_tab_pool:ALIBI": "0eb0587dceba518e",
+				"case_engine_tab_pool:CAPABILITY": "322b4a9a7d5aa161",
+				"case_engine_tab_pool:MOTIVE": "21935abc9d837f12",
+				"case_engine_tab_pool:PROFILE": "2337203bd500eb7c",
+				"case_engine_tab_pool:TIMELINE": "602bd88acbb417c8",
+				"charge_sheet": "65be014aafc24038",
+				"deadline": "7b8253c8e2e4a9d1",
+				"fact_pool:ALIBI": "38ed52f2e6424818",
+				"fact_pool:CAPABILITY": "1acdcf60fb0be738",
+				"fact_pool:MOTIVE": "7d889f4168e6c800",
+				"fact_pool:PROFILE": "07a6d1291c8e3cee",
+				"fact_pool:TIMELINE": "48817a89a0873039",
+				"silhouette": "5b104eced4d5b148",
+				"truth": "0a517c49c9efa407"
+			},
+			"reroll_index": 0,
+			"run_seed_input_text": "K11-1LU",
+			"run_seed_text": "K11-1LU",
+			"run_seed_u64_hex": "0000000000000822",
+			"suspect_index": 0,
+			"suspect_seed_u64_hex": "0954f10423456a6d"
+		},
+		"subseeds": {
+			"charge_sheet": "65be014aafc24038",
+			"deadline": "7b8253c8e2e4a9d1",
+			"fact_pool:ALIBI": "38ed52f2e6424818",
+			"fact_pool:CAPABILITY": "1acdcf60fb0be738",
+			"fact_pool:MOTIVE": "7d889f4168e6c800",
+			"fact_pool:PROFILE": "07a6d1291c8e3cee",
+			"fact_pool:TIMELINE": "48817a89a0873039",
+			"silhouette": "5b104eced4d5b148",
+			"truth": "0a517c49c9efa407"
+		},
+		"suspect_seed_hex": "0954f10423456a6d"
+	},
+	"id": "S-f10423456a6d",
+	"run_seed_text": "K11-1LU",
+	"run_seed_u64_hex": "0000000000000822",
+	"schema_version": 1,
+	"silhouette_label": "SIL_03",
+	"suspect_index": 0,
+	"suspect_seed_u64_hex": "0954f10423456a6d",
+	"tabs": {
+		"ALIBI": {
+			"fact_pool_seed_u64_hex": "0eb0587dceba518e",
+			"facts": [
+				{
+					"anchor": "alibi",
+					"chain_id": "",
+					"conflict_group": "cg_invoice_statement",
+					"fact_id": "alibi_01_alibi_statement",
+					"fact_type": "ALIBI_STATEMENT",
+					"reliability": "SOLID",
+					"slots": {
+						"alibi_place": "break_room",
+						"time_window": "handoff_gap"
+					},
+					"tab": "ALIBI",
+					"template_id": "alibi_statement",
+					"text": "Subject claims to be at break_room during handoff_gap.",
+					"truth_refs": [
+						"alibi_truth",
+						"facts.time_window"
+					]
+				},
+				{
+					"anchor": "alibi",
+					"chain_id": "",
+					"conflict_group": "alibi_presence",
+					"fact_id": "alibi_04_alibi_witness",
+					"fact_type": "ALIBI_WITNESS",
+					"reliability": "SOLID",
+					"slots": {
+						"alibi_place": "break_room",
+						"witness_name": "Yasmin Abbas"
+					},
+					"tab": "ALIBI",
+					"template_id": "alibi_witness",
+					"text": "Yasmin Abbas references a meeting at break_room.",
+					"truth_refs": [
+						"alibi_truth",
+						"facts.witness_name"
+					]
+				}
+			],
+			"tab": "ALIBI"
+		},
+		"CAPABILITY": {
+			"fact_pool_seed_u64_hex": "322b4a9a7d5aa161",
+			"facts": [
+				{
+					"anchor": "capability",
+					"chain_id": "",
+					"conflict_group": "capability_scope",
+					"fact_id": "capability_02_capability_access",
+					"fact_type": "CAPABILITY_ACCESS",
+					"reliability": "SOLID",
+					"slots": {
+						"supervisor_name": "Lead Farah Visser",
+						"tool": "badge_terminal"
+					},
+					"tab": "CAPABILITY",
+					"template_id": "capability_access",
+					"text": "Lead Farah Visser signed off on toolchain badge_terminal authorization.",
+					"truth_refs": [
+						"crime_type",
+						"facts.supervisor_name"
+					]
+				}
+			],
+			"tab": "CAPABILITY"
+		},
+		"MOTIVE": {
+			"fact_pool_seed_u64_hex": "21935abc9d837f12",
+			"facts": [
+				{
+					"anchor": "motive",
+					"chain_id": "",
+					"conflict_group": "cg_invoice_pressure",
+					"fact_id": "motive_03_motive_pressure",
+					"fact_type": "MOTIVE_PRESSURE",
+					"reliability": "SOLID",
+					"slots": {
+						"motive": "coercion"
+					},
+					"tab": "MOTIVE",
+					"template_id": "motive_pressure",
+					"text": "Recent behavior indicates pressure linked to coercion.",
+					"truth_refs": [
+						"motive"
+					]
+				},
+				{
+					"anchor": "relationship",
+					"chain_id": "",
+					"conflict_group": "motive_driver",
+					"fact_id": "motive_06_motive_relationship_pattern",
+					"fact_type": "MOTIVE_RELATIONSHIP",
+					"reliability": "SOLID",
+					"slots": {
+						"contact_name": "Vendor Rep Marlowe Kessler",
+						"contact_role": "vendor"
+					},
+					"tab": "MOTIVE",
+					"template_id": "motive_relationship_pattern",
+					"text": "Message pattern shows repeated check-ins with vendor Vendor Rep Marlowe Kessler.",
+					"truth_refs": [
+						"relationship",
+						"facts.contact_role",
+						"facts.contact_name"
+					]
+				}
+			],
+			"tab": "MOTIVE"
+		},
+		"PROFILE": {
+			"fact_pool_seed_u64_hex": "2337203bd500eb7c",
+			"facts": [
+				{
+					"anchor": "profile",
+					"chain_id": "",
+					"conflict_group": "cg_invoice_pressure",
+					"fact_id": "profile_05_profile_assignment_detail",
+					"fact_type": "PROFILE_BEHAVIOR",
+					"reliability": "SOLID",
+					"slots": {
+						"assignment_label": "Dispatch Rotation",
+						"human_schedule": "Day Shift"
+					},
+					"tab": "PROFILE",
+					"template_id": "profile_assignment_detail",
+					"text": "Assignment sheet links the subject to Dispatch Rotation duty under a Day Shift calendar.",
+					"truth_refs": [
+						"facts.assignment_label",
+						"facts.human_schedule"
+					]
+				}
+			],
+			"tab": "PROFILE"
+		},
+		"TIMELINE": {
+			"fact_pool_seed_u64_hex": "602bd88acbb417c8",
+			"facts": [
+				{
+					"anchor": "timeline",
+					"chain_id": "",
+					"conflict_group": "cg_invoice_statement",
+					"fact_id": "timeline_00_timeline_anchor_exit",
+					"fact_type": "TIMELINE_ANCHOR",
+					"reliability": "SOLID",
+					"slots": {
+						"location": "storage_wing",
+						"time_anchor": "16:50"
+					},
+					"tab": "TIMELINE",
+					"template_id": "timeline_anchor_exit",
+					"text": "Camera frame shows movement through storage_wing at 16:50.",
+					"truth_refs": [
+						"facts.time_window",
+						"facts.location"
+					]
+				}
+			],
+			"tab": "TIMELINE"
+		}
+	},
+	"truth_bundle": {
+		"alibi_truth": "verified",
+		"conflict_audit": {
+			"failed_groups": [],
+			"groups": {
+				"alibi_presence": {
+					"breaker_id": "alibi_04_alibi_witness",
+					"members": [
+						{
+							"anchor": "alibi",
+							"fact_id": "alibi_04_alibi_witness",
+							"fact_type": "ALIBI_WITNESS",
+							"reliability": "SOLID"
+						}
+					],
+					"prefer_anchor": "",
+					"prefer_fact_type": "",
+					"repaired": true
+				},
+				"capability_scope": {
+					"breaker_id": "capability_02_capability_access",
+					"members": [
+						{
+							"anchor": "capability",
+							"fact_id": "capability_02_capability_access",
+							"fact_type": "CAPABILITY_ACCESS",
+							"reliability": "SOLID"
+						}
+					],
+					"prefer_anchor": "",
+					"prefer_fact_type": "",
+					"repaired": true
+				},
+				"cg_invoice_pressure": {
+					"breaker_id": "motive_03_motive_pressure",
+					"members": [
+						{
+							"anchor": "motive",
+							"fact_id": "motive_03_motive_pressure",
+							"fact_type": "MOTIVE_PRESSURE",
+							"reliability": "SOLID"
+						},
+						{
+							"anchor": "profile",
+							"fact_id": "profile_05_profile_assignment_detail",
+							"fact_type": "PROFILE_BEHAVIOR",
+							"reliability": "SOLID"
+						}
+					],
+					"prefer_anchor": "motive",
+					"prefer_fact_type": "MOTIVE_PRESSURE",
+					"repaired": true
+				},
+				"cg_invoice_statement": {
+					"breaker_id": "timeline_00_timeline_anchor_exit",
+					"members": [
+						{
+							"anchor": "timeline",
+							"fact_id": "timeline_00_timeline_anchor_exit",
+							"fact_type": "TIMELINE_ANCHOR",
+							"reliability": "SOLID"
+						},
+						{
+							"anchor": "alibi",
+							"fact_id": "alibi_01_alibi_statement",
+							"fact_type": "ALIBI_STATEMENT",
+							"reliability": "SOLID"
+						}
+					],
+					"prefer_anchor": "timeline",
+					"prefer_fact_type": "TIMELINE_ANCHOR",
+					"repaired": true
+				},
+				"motive_driver": {
+					"breaker_id": "motive_06_motive_relationship_pattern",
+					"members": [
+						{
+							"anchor": "relationship",
+							"fact_id": "motive_06_motive_relationship_pattern",
+							"fact_type": "MOTIVE_RELATIONSHIP",
+							"reliability": "SOLID"
+						}
+					],
+					"prefer_anchor": "",
+					"prefer_fact_type": "",
+					"repaired": true
+				}
+			},
+			"repaired_groups": [
+				"alibi_presence",
+				"capability_scope",
+				"cg_invoice_pressure",
+				"cg_invoice_statement",
+				"motive_driver"
+			],
+			"salvaged_missing_conflict_group_count": 0,
+			"salvaged_unresolvable_conflict_group_count": 5
+		},
+		"crime_family": "fraud",
+		"crime_type": "invoice_manipulation",
+		"facts": {
+			"age_band": "35_49",
+			"age_years": 39,
+			"alibi_place": "break_room",
+			"assignment_label": "Dispatch Rotation",
+			"birth_day": 11,
+			"birth_month": "December",
+			"contact_name": "Vendor Rep Marlowe Kessler",
+			"contact_role": "vendor",
+			"coworker_name": "Victor Bennett",
+			"criminal_history_band": "minor_flags",
+			"criminal_history_label": "Minor Administrative Flags",
+			"dependents_band": "0",
+			"family_status": "partnered",
+			"first_name": "Victor",
+			"full_name": "Victor Quinn",
+			"human_assignment": "Dispatch Rotation",
+			"human_birthday": "December 11",
+			"human_criminal_history": "Minor Administrative Flags",
+			"human_dependents": "0",
+			"human_occupation": "Routing Specialist",
+			"human_role_family": "Operations",
+			"human_schedule": "Day Shift",
+			"human_temperament": "Guarded",
+			"income_proxy": "mid",
+			"last_name": "Quinn",
+			"life_stage": "adult",
+			"location": "storage_wing",
+			"occupation_id": "routing_specialist",
+			"occupation_label": "Routing Specialist",
+			"role_family": "ops",
+			"role_family_label": "Operations",
+			"schedule_label": "Day Shift",
+			"schedule_tag": "day_shift",
+			"shift": "A",
+			"supervisor_name": "Lead Farah Visser",
+			"team": "routing",
+			"temperament": "guarded",
+			"temperament_label": "Guarded",
+			"tenure_band": "established",
+			"tenure_label": "Established",
+			"time_anchor": "16:50",
+			"time_window": "handoff_gap",
+			"tool": "badge_terminal",
+			"witness_name": "Yasmin Abbas"
+		},
+		"guilt_state": "INNOCENT",
+		"motive": "coercion",
+		"opportunity": "service_window",
+		"profile_bundle": {
+			"access_tags": [
+				"keycard_access",
+				"after_hours_access"
+			],
+			"age_band": "35_49",
+			"age_years": 39,
+			"alibi_place_tags": [
+				"break_room",
+				"front_office",
+				"ledger_office"
+			],
+			"assignment_label": "Dispatch Rotation",
+			"birth_day": 11,
+			"birth_month": "December",
+			"criminal_history_band": "minor_flags",
+			"criminal_history_label": "Minor Administrative Flags",
+			"dependents_band": "0",
+			"family_status": "partnered",
+			"first_name": "Victor",
+			"full_name": "Victor Quinn",
+			"income_proxy": "mid",
+			"last_name": "Quinn",
+			"latent_axes": {
+				"cognitive_load": "mid",
+				"composure": "mid",
+				"defensiveness": "mid",
+				"narrative_control": "high",
+				"stress_reactivity": "mid",
+				"volatility": "low"
+			},
+			"life_stage": "adult",
+			"location_tags": [
+				"archives",
+				"dispatch_desk",
+				"storage_wing",
+				"service_corridor",
+				"front_office"
+			],
+			"occupation_id": "routing_specialist",
+			"occupation_label": "Routing Specialist",
+			"role_family": "ops",
+			"role_family_label": "Operations",
+			"role_tags": [
+				"operations",
+				"internal_staff",
+				"routing",
+				"handoff"
+			],
+			"schedule_label": "Day Shift",
+			"schedule_tag": "day_shift",
+			"temperament": "guarded",
+			"temperament_label": "Guarded",
+			"tenure_band": "established",
+			"tenure_label": "Established",
+			"time_window_tags": [
+				"shift_start",
+				"midday",
+				"handoff_gap"
+			],
+			"tool_tags": [
+				"ledger_console",
+				"badge_terminal",
+				"maintenance_tablet",
+				"dispatch_console"
+			],
+			"typical_contact_roles": [
+				"coworker",
+				"supervisor",
+				"vendor",
+				"friend",
+				"family"
+			]
+		},
+		"relationship": "vendor_contact",
+		"relationship_graph": {
+			"edges": [
+				{
+					"a": "E_SUS",
+					"b": "E_SUP",
+					"type": "reports_to"
+				},
+				{
+					"a": "E_SUS",
+					"b": "E_COW",
+					"type": "coworker"
+				},
+				{
+					"a": "E_SUS",
+					"b": "E_WIT",
+					"type": "mentioned_by"
+				},
+				{
+					"a": "E_SUS",
+					"b": "E_VEN",
+					"type": "contact"
+				}
+			],
+			"nodes": {
+				"E_COW": {
+					"id": "E_COW",
+					"name_id": "coworker:victor:bennett:e_cow",
+					"name_text": "Victor Bennett",
+					"role": "coworker"
+				},
+				"E_FAM": {
+					"id": "E_FAM",
+					"name_id": "family:peter:locke:e_fam",
+					"name_text": "Family Contact Peter Locke",
+					"role": "family"
+				},
+				"E_SUP": {
+					"id": "E_SUP",
+					"name_id": "supervisor:farah:visser:e_sup",
+					"name_text": "Lead Farah Visser",
+					"role": "supervisor"
+				},
+				"E_VEN": {
+					"id": "E_VEN",
+					"name_id": "vendor:marlowe:kessler:e_ven",
+					"name_text": "Vendor Rep Marlowe Kessler",
+					"role": "vendor"
+				},
+				"E_WIT": {
+					"id": "E_WIT",
+					"name_id": "witness:yasmin:abbas:e_wit",
+					"name_text": "Yasmin Abbas",
+					"role": "witness"
+				}
+			}
+		},
+		"salvage_audit": {
+			"salvaged_anchor_names": [],
+			"salvaged_anchor_only_corrupted_count": 0,
+			"salvaged_missing_conflict_group_count": 0,
+			"salvaged_unresolvable_conflict_group_count": 5
+		},
+		"seed_trace": {
+			"core_seed_u64_hex": "509035db620a8e73",
+			"named_subseeds": {
+				"case_engine_core": "509035db620a8e73",
+				"case_engine_tab_pool:ALIBI": "0eb0587dceba518e",
+				"case_engine_tab_pool:CAPABILITY": "322b4a9a7d5aa161",
+				"case_engine_tab_pool:MOTIVE": "21935abc9d837f12",
+				"case_engine_tab_pool:PROFILE": "2337203bd500eb7c",
+				"case_engine_tab_pool:TIMELINE": "602bd88acbb417c8",
+				"charge_sheet": "65be014aafc24038",
+				"deadline": "7b8253c8e2e4a9d1",
+				"fact_pool:ALIBI": "38ed52f2e6424818",
+				"fact_pool:CAPABILITY": "1acdcf60fb0be738",
+				"fact_pool:MOTIVE": "7d889f4168e6c800",
+				"fact_pool:PROFILE": "07a6d1291c8e3cee",
+				"fact_pool:TIMELINE": "48817a89a0873039",
+				"silhouette": "5b104eced4d5b148",
+				"truth": "0a517c49c9efa407"
+			},
+			"reroll_index": 0,
+			"run_seed_input_text": "K11-1LU",
+			"run_seed_text": "K11-1LU",
+			"run_seed_u64_hex": "0000000000000822",
+			"suspect_index": 0,
+			"suspect_seed_u64_hex": "0954f10423456a6d"
+		},
+		"tab_pools": {
+			"ALIBI": {
+				"fact_pool_seed_u64": 1058443209794539918,
+				"tab": "ALIBI"
+			},
+			"CAPABILITY": {
+				"fact_pool_seed_u64": 3615065153283465569,
+				"tab": "CAPABILITY"
+			},
+			"MOTIVE": {
+				"fact_pool_seed_u64": 2419377190971080466,
+				"tab": "MOTIVE"
+			},
+			"PROFILE": {
+				"fact_pool_seed_u64": 2537532356395330428,
+				"tab": "PROFILE"
+			},
+			"TIMELINE": {
+				"fact_pool_seed_u64": 6929870542274303944,
+				"tab": "TIMELINE"
+			}
+		},
+		"truth_graph": {
+			"alibi": {
+				"corroboration_mode": "mixed",
+				"place": "break_room",
+				"strength_band": "robust",
+				"truth": "verified"
+			},
+			"capability": {
+				"access_tags": [
+					"keycard_access",
+					"after_hours_access"
+				],
+				"exposure_band": "LOW_VISIBILITY",
+				"location_tags": [
+					"archives",
+					"dispatch_desk",
+					"storage_wing",
+					"service_corridor",
+					"front_office"
+				],
+				"skill_tags": [
+					"process_routine",
+					"records_handling",
+					"console_operations",
+					"field_operations",
+					"credential_navigation",
+					"records_navigation",
+					"back_area_routine"
+				],
+				"tool": "badge_terminal"
+			},
+			"crime": {
+				"family": "fraud",
+				"method_class": "approval_abuse",
+				"type": "invoice_manipulation"
+			},
+			"culpability": {
+				"cover_posture": "confused_compliance",
+				"pressure_bias": "external_scrutiny",
+				"state": "INNOCENT"
+			},
+			"motive": {
+				"class": "leverage",
+				"id": "coercion",
+				"intensity_band": "contained"
+			},
+			"opportunity": {
+				"class": "routine_cover",
+				"id": "service_window",
+				"tool": "badge_terminal"
+			},
+			"relationship": {
+				"contact_name": "Vendor Rep Marlowe Kessler",
+				"contact_node_id": "E_VEN",
+				"contact_role": "vendor",
+				"id": "vendor_contact"
+			},
+			"schema_version": 1,
+			"timeline": {
+				"anchor": "16:50",
+				"location": "storage_wing",
+				"window": "handoff_gap"
+			},
+			"twist_tags": [
+				"ADMIN_ERROR"
+			]
+		},
+		"twist_tags": [
+			"ADMIN_ERROR"
+		],
+		"variant_required_anchors": [
+			"timeline",
+			"alibi",
+			"capability",
+			"motive"
+		],
+		"variant_required_fact_types": [
+			"TIMELINE_ANCHOR",
+			"ALIBI_STATEMENT",
+			"CAPABILITY_ACCESS",
+			"MOTIVE_PRESSURE"
+		],
+		"variant_skeleton_id": "fraud_invoice_manipulation_v0_b"
+	},
+	"truth_guilty": false
+}

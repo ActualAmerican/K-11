@@ -28,6 +28,7 @@ var _folio_spread_index: int = 0
 @onready var Batch2kBtn: Button = %Batch2kBtn
 @onready var ExportCsvBtn: Button = %ExportCsvBtn
 @onready var ExportJsonBtn: Button = %ExportJsonBtn
+@onready var ImportJsonBtn: Button = %ImportJsonBtn
 @onready var ClearBtn: Button = %ClearBtn
 @onready var FolioBtn: Button = %FolioBtn
 @onready var Summary: RichTextLabel = %Summary
@@ -81,6 +82,9 @@ func _ready() -> void:
 	var export_json_cb := Callable(self, "_on_ExportJsonBtn_pressed")
 	if ExportJsonBtn != null and not ExportJsonBtn.pressed.is_connected(export_json_cb):
 		ExportJsonBtn.pressed.connect(export_json_cb)
+	var import_json_cb := Callable(self, "_on_ImportJsonBtn_pressed")
+	if ImportJsonBtn != null and not ImportJsonBtn.pressed.is_connected(import_json_cb):
+		ImportJsonBtn.pressed.connect(import_json_cb)
 	var clear_cb := Callable(self, "_on_ClearBtn_pressed")
 	if ClearBtn != null and not ClearBtn.pressed.is_connected(clear_cb):
 		ClearBtn.pressed.connect(clear_cb)
@@ -94,6 +98,7 @@ func _ready() -> void:
 	Summary.clear()
 	Summary.append_text("[b]Case Engine Lab (Editor)[/b]\n")
 	Summary.append_text("Ready\n")
+	Summary.append_text("Import JSON: paste into Raw Payload or copy to clipboard, then click Import.\n")
 	ValidatorList.clear()
 	PreviewText.text = ""
 	JsonText.text = "Awaiting Generate..."
@@ -144,6 +149,7 @@ func _on_ClearBtn_pressed() -> void:
 	Summary.clear()
 	Summary.append_text("[b]Case Engine Lab (Editor)[/b]\n")
 	Summary.append_text("Ready\n")
+	Summary.append_text("Import JSON: paste into Raw Payload or copy to clipboard, then click Import.\n")
 	ValidatorList.clear()
 	PreviewText.text = ""
 	JsonText.text = "Awaiting Generate..."
@@ -154,6 +160,56 @@ func _on_NextBtn_pressed() -> void:
 	Summary.append_text("Next clicked...\n")
 	JsonText.text = "Running gate..."
 	_generate(true)
+
+func _on_ImportJsonBtn_pressed() -> void:
+	var text: String = JsonText.text.strip_edges()
+	var source: String = "raw panel"
+	if text == "":
+		text = DisplayServer.clipboard_get().strip_edges()
+		source = "clipboard"
+	if text == "":
+		Summary.append_text("import: no JSON in Raw Payload or clipboard\n")
+		return
+
+	var payload: Dictionary = SuspectIO.payload_from_json(text)
+	var suspect: SuspectData = SuspectIO.from_json(text)
+	if payload.is_empty() or suspect == null:
+		_last_payload = {
+			"ok": false,
+			"error": "BAD_IMPORT_JSON",
+		}
+		_last_audit = {}
+		_last_generate_ms = 0.0
+		_last_gate_trace = []
+		_last_gate_attempts = 0
+		_last_gate_reject_codes = PackedStringArray(["BAD_IMPORT_JSON"])
+		var bad_report: Dictionary = {
+			"level": "REJECT",
+			"items": [{"level":"REJECT","code":"BAD_IMPORT_JSON","msg":"Import JSON was not a valid case payload or suspect JSON."}]
+		}
+		_refresh_ui(bad_report, JSON.stringify(_last_payload, "\t", true), 0.0)
+		return
+
+	_last_payload = payload
+	_last_gate_trace = _to_dict_array(payload.get("gen_trace", []))
+	_last_gate_attempts = 1
+	_last_gate_reject_codes = PackedStringArray()
+	_last_generate_ms = 0.0
+	var report: Dictionary = ValidatorSuite.validate_case(_last_payload)
+	_last_audit = CaseEngineLabAudit.build_case_audit(_last_payload, report, {
+		"attempts": 1,
+		"final_rr": int(_last_payload.get("reroll_index", 0)),
+		"final_outcome": str(report.get("level", "REJECT")),
+		"final_reject_codes": PackedStringArray(_report_reject_codes(report)),
+		"attempt_reject_codes": PackedStringArray(),
+		"attempt_history": [],
+		"gate_ms": 0.0,
+		"exhausted": false,
+		"dup_rejects": 0,
+	})
+	_last_batch_report = {}
+	_refresh_ui(report, JSON.stringify(_last_payload, "\t", true), 0.0)
+	Summary.append_text("import: loaded from %s\n" % source)
 
 func _on_Batch200Btn_pressed() -> void:
 	_run_batch(200)
@@ -579,7 +635,8 @@ func _run_gate(run_seed_u64: int, run_seed_text: String, suspect_index: int, rr_
 	for step in range(REROLL_BUDGET + 1):
 		attempts = step + 1
 		var t0: int = Time.get_ticks_usec()
-		var payload: Dictionary = CaseEngineFacadeScript.generate_case(run_seed_u64, run_seed_text, suspect_index, rr)
+		var facade := CaseEngineFacadeScript.new()
+		var payload: Dictionary = facade.generate_case_instance(run_seed_u64, run_seed_text, suspect_index, rr)
 		var gen_ms: float = float(Time.get_ticks_usec() - t0) / 1000.0
 		gate_ms += gen_ms
 

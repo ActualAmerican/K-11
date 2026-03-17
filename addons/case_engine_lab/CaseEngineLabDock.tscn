@@ -81,6 +81,11 @@ unique_name_in_owner = true
 text = "JSON"
 tooltip_text = "Export JSON (last)"
 
+[node name="ImportJsonBtn" type="Button" parent="Margin/Root/Toolbar/MainRow"]
+unique_name_in_owner = true
+text = "Import"
+tooltip_text = "Import JSON from Raw Payload or clipboard"
+
 [node name="TruthToggle" type="CheckBox" parent="Margin/Root/Toolbar/MainRow"]
 unique_name_in_owner = true
 text = "Truth"
@@ -193,7 +198,6 @@ text = "Raw Payload (JSON / CSV)"
 
 [node name="JsonText" type="TextEdit" parent="Margin/Root/Split/Right"]
 unique_name_in_owner = true
-readonly = true
 size_flags_horizontal = 3
 size_flags_vertical = 3
 
@@ -270,4 +274,5 @@ scroll_active = true
 [connection signal="pressed" from="Margin/Root/Toolbar/MainRow/Batch2kBtn" to="." method="_on_Batch2kBtn_pressed"]
 [connection signal="pressed" from="Margin/Root/Toolbar/MainRow/ExportCsvBtn" to="." method="_on_ExportCsvBtn_pressed"]
 [connection signal="pressed" from="Margin/Root/Toolbar/MainRow/ExportJsonBtn" to="." method="_on_ExportJsonBtn_pressed"]
+[connection signal="pressed" from="Margin/Root/Toolbar/MainRow/ImportJsonBtn" to="." method="_on_ImportJsonBtn_pressed"]
 [connection signal="pressed" from="Margin/Root/Toolbar/MainRow/FolioBtn" to="." method="_on_FolioBtn_pressed"]

@@ -15,6 +15,7 @@ var id: String = ""
 var silhouette_label: String = ""
 var deadline_s: int = 0
 var truth_guilty: bool = false
+var truth_bundle: Dictionary = {}
 
 # charge_sheet keys: case_id:String, title:String, charges:Array[String], brief:String
 var charge_sheet: Dictionary = {}
@@ -41,10 +42,25 @@ func is_valid() -> bool:
 		return false
 	if deadline_s <= 0:
 		return false
+	if truth_bundle.is_empty():
+		return false
+	if not truth_bundle.has("truth_graph"):
+		return false
 	if not charge_sheet.has("case_id") or not charge_sheet.has("title") or not charge_sheet.has("charges") or not charge_sheet.has("brief"):
 		return false
 	if not (tabs.has("ALIBI") and tabs.has("TIMELINE") and tabs.has("MOTIVE") and tabs.has("CAPABILITY") and tabs.has("PROFILE")):
 		return false
+	for tab_id in ["ALIBI", "TIMELINE", "MOTIVE", "CAPABILITY", "PROFILE"]:
+		var tab_value: Variant = tabs.get(tab_id, {})
+		if not (tab_value is Dictionary):
+			return false
+		var tab_data: Dictionary = tab_value as Dictionary
+		if str(tab_data.get("tab", "")) != tab_id:
+			return false
+		if not tab_data.has("fact_pool_seed_u64"):
+			return false
+		if not (tab_data.get("facts", []) is Array):
+			return false
 	return true
 
 func truth_label() -> String:
