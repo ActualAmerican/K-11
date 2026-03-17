@@ -356,11 +356,16 @@ static func _build_charge_sheet(suspect: SuspectData, truth_bundle: Dictionary, 
 	var ct: String = str(truth_bundle.get("crime_type", ""))
 	var opp: String = str(truth_bundle.get("opportunity", ""))
 	var motive: String = str(truth_bundle.get("motive", ""))
+	var package: Dictionary = _charge_package_for_truth(ct, cf, opp, motive)
 	return {
 		"case_id": ("CE-%s" % suspect.id) + ("" if reroll_index <= 0 else "-r%d" % reroll_index),
-		"title": "%s investigation" % _title_case(ct),
-		"charges": ["Policy breach", "Operational misconduct"],
-		"brief": "Pattern review indicates %s activity during %s with pressure around %s." % [cf, opp, motive],
+		"title": str(package.get("title", "%s inquiry" % _crime_type_label(ct))),
+		"charges": (package.get("charges", ["Policy breach", "Operational misconduct"]) as Array).duplicate(),
+		"brief": str(package.get("brief", "Review centers on %s concerns around %s, with contextual pressure tied to %s." % [
+			_crime_family_label(cf),
+			_opportunity_surface_label(opp),
+			_motive_surface_label(motive),
+		])),
 	}
 
 static func _build_tabs(rng: RandomNumberGenerator, truth_bundle: Dictionary, skeleton: Dictionary, run_seed_u64: int, suspect_index: int, reroll_index: int, gen_trace: Array) -> Dictionary:
@@ -1068,7 +1073,8 @@ static func _build_conflict_groups(payload: Dictionary) -> Dictionary:
 static func _render_template(tpl: String, slots: Dictionary) -> String:
 	var out: String = tpl
 	for k in slots.keys():
-		out = out.replace("{" + str(k) + "}", str(slots.get(k)))
+		var key: String = str(k)
+		out = out.replace("{" + key + "}", _surface_slot_value(key, slots.get(k)))
 	return out
 
 
@@ -1551,3 +1557,248 @@ static func _title_case(v: String) -> String:
 	for i in range(p.size()):
 		p[i] = p[i].capitalize()
 	return " ".join(p)
+
+static func _crime_type_label(crime_type: String) -> String:
+	for row_v in CaseEngineContent_v0.crime_type_rows():
+		if not (row_v is Dictionary):
+			continue
+		var row: Dictionary = row_v as Dictionary
+		if str(row.get("id", "")) == crime_type:
+			var label: String = str(row.get("label", ""))
+			if label != "":
+				return label
+	return _title_case(crime_type)
+
+static func _crime_family_label(crime_family: String) -> String:
+	match crime_family:
+		"fraud":
+			return "record-handling"
+		"embezzlement":
+			return "fund-handling"
+		"sabotage":
+			return "systems interference"
+		_:
+			return _title_case(crime_family).to_lower()
+
+static func _opportunity_surface_label(opportunity_id: String) -> String:
+	match opportunity_id:
+		"night_shift":
+			return "overnight coverage"
+		"handoff_gap":
+			return "the handoff interval"
+		"badge_override":
+			return "badge override activity"
+		"service_window":
+			return "a routine service window"
+		_:
+			return _title_case(opportunity_id).to_lower()
+
+static func _motive_surface_label(motive_id: String) -> String:
+	match motive_id:
+		"career_pressure":
+			return "career pressure"
+		"retaliation":
+			return "retaliatory pressure"
+		"coercion":
+			return "outside coercion"
+		"discipline":
+			return "recent disciplinary strain"
+		"debt":
+			return "financial strain"
+		"resentment":
+			return "workplace resentment"
+		"protection":
+			return "protective pressure"
+		"ambition":
+			return "advancement pressure"
+		_:
+			return _title_case(motive_id).to_lower()
+
+static func _surface_slot_value(key: String, value: Variant) -> String:
+	var text: String = str(value)
+	match key:
+		"location", "alibi_place":
+			return _location_surface_label(text)
+		"time_window":
+			return _time_window_surface_label(text)
+		"tool":
+			return _tool_surface_label(text)
+		"motive":
+			return _motive_surface_label(text)
+		"tenure_band":
+			return _tenure_surface_label(text)
+		"contact_role":
+			return _contact_role_surface_label(text)
+		_:
+			return text
+
+static func _location_surface_label(location_id: String) -> String:
+	match location_id:
+		"break_room":
+			return "break room"
+		"dispatch_desk":
+			return "dispatch desk"
+		"service_corridor":
+			return "service corridor"
+		"archives":
+			return "archives"
+		"storage_wing":
+			return "storage wing"
+		"ledger_office":
+			return "ledger office"
+		"records_room":
+			return "records room"
+		"checkpoint":
+			return "checkpoint"
+		"camera_hub":
+			return "camera hub"
+		"maintenance_bay":
+			return "maintenance bay"
+		"conference_room":
+			return "conference room"
+		"loading_dock":
+			return "loading dock"
+		"front_office":
+			return "front office"
+		_:
+			return _title_case(location_id).to_lower()
+
+static func _time_window_surface_label(time_window_id: String) -> String:
+	match time_window_id:
+		"shift_start":
+			return "shift start"
+		"handoff_gap":
+			return "handoff"
+		"cleanup_window":
+			return "cleanup"
+		"midday":
+			return "midday"
+		"late_afternoon":
+			return "late afternoon"
+		"evening_window":
+			return "evening"
+		"night_shift":
+			return "night shift"
+		"graveyard_window":
+			return "graveyard hours"
+		"audit_window":
+			return "audit window"
+		"service_window":
+			return "service window"
+		_:
+			return _title_case(time_window_id).to_lower()
+
+static func _tool_surface_label(tool_id: String) -> String:
+	match tool_id:
+		"ledger_console":
+			return "ledger console"
+		"badge_terminal":
+			return "badge terminal"
+		"maintenance_tablet":
+			return "maintenance tablet"
+		"invoice_terminal":
+			return "invoice terminal"
+		"records_tablet":
+			return "records tablet"
+		"camera_console":
+			return "camera console"
+		"patrol_log":
+			return "patrol log"
+		"field_kit":
+			return "field kit"
+		"audit_tablet":
+			return "audit tablet"
+		"dispatch_console":
+			return "dispatch console"
+		"service_scanner":
+			return "service scanner"
+		_:
+			return _title_case(tool_id).to_lower()
+
+static func _tenure_surface_label(tenure_band: String) -> String:
+	match tenure_band:
+		"new_hire":
+			return "recently assigned"
+		"established":
+			return "well established"
+		"long_tenure":
+			return "long-tenured"
+		_:
+			return _title_case(tenure_band).to_lower()
+
+static func _contact_role_surface_label(contact_role: String) -> String:
+	match contact_role:
+		"manager":
+			return "manager"
+		"coworker":
+			return "co-worker"
+		"vendor_contact":
+			return "vendor contact"
+		"family_contact":
+			return "family contact"
+		"auditor_contact":
+			return "audit contact"
+		"subordinate_contact":
+			return "direct report"
+		"lender_contact":
+			return "lender"
+		"former_partner":
+			return "former partner"
+		"friend_contact":
+			return "friend"
+		"neighbor_contact":
+			return "neighbor"
+		_:
+			return _title_case(contact_role).to_lower()
+
+static func _charge_package_for_truth(crime_type: String, crime_family: String, opportunity_id: String, motive_id: String) -> Dictionary:
+	var crime_label: String = _crime_type_label(crime_type)
+	var opportunity_label: String = _opportunity_surface_label(opportunity_id)
+	var motive_label: String = _motive_surface_label(motive_id)
+	match crime_type:
+		"invoice_manipulation":
+			return {
+				"title": "%s review" % crime_label,
+				"charges": ["Improper invoice handling", "Irregular approval routing"],
+				"brief": "Accounting review flagged altered invoice handling during %s, with reference points suggesting %s." % [opportunity_label, motive_label],
+			}
+		"expense_recode":
+			return {
+				"title": "%s review" % crime_label,
+				"charges": ["Improper expense recoding", "Misstated internal classification"],
+				"brief": "Expense records show classification changes tied to %s, with pressure indicators around %s." % [opportunity_label, motive_label],
+			}
+		"ledger_drift":
+			return {
+				"title": "%s inquiry" % crime_label,
+				"charges": ["Ledger variance under review", "Record continuity concerns"],
+				"brief": "Ledger reconciliation opened after record drift surfaced around %s, against a backdrop of %s." % [opportunity_label, motive_label],
+			}
+		"float_skimming":
+			return {
+				"title": "%s inquiry" % crime_label,
+				"charges": ["Cash-float discrepancy", "Till handling irregularity"],
+				"brief": "Cash handling review focuses on a float discrepancy linked to %s, with contextual strain around %s." % [opportunity_label, motive_label],
+			}
+		"sensor_tamper":
+			return {
+				"title": "%s incident file" % crime_label,
+				"charges": ["Security sensor interference", "Operational safeguard breach"],
+				"brief": "Systems staff opened an incident file after protective coverage failed during %s, with pressure markers tied to %s." % [opportunity_label, motive_label],
+			}
+		"camera_gap":
+			return {
+				"title": "%s incident file" % crime_label,
+				"charges": ["Surveillance continuity breach", "Monitoring lapse under review"],
+				"brief": "Surveillance review flagged a monitoring gap near %s, with surrounding context pointing to %s." % [opportunity_label, motive_label],
+			}
+		_:
+			return {
+				"title": "%s inquiry" % crime_label,
+				"charges": ["Policy breach", "Operational misconduct"],
+				"brief": "Review centers on %s concerns around %s, with contextual pressure tied to %s." % [
+					_crime_family_label(crime_family),
+					opportunity_label,
+					motive_label,
+				],
+			}

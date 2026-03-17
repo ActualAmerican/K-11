@@ -154,6 +154,7 @@ texture = ExtResource("21_vvhu1")
 texture = ExtResource("24_3jf1l")
 
 [node name="Alarm" type="Sprite2D" parent="."]
+position = Vector2(-85, 1)
 texture = ExtResource("9_rajel")
 
 [node name="AlarmStub" type="CanvasLayer" parent="."]
