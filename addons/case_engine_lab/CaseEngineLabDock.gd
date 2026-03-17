@@ -5,6 +5,9 @@ const LabPreview = preload("res://addons/case_engine_lab/CaseEngineLabPreview.gd
 const CaseEngineLabAudit = preload("res://addons/case_engine_lab/CaseEngineLabAudit.gd")
 const CaseEngineFacadeScript = preload("res://Scripts/case_engine/CaseEngineFacade.gd")
 const CaseFolderRender = preload("res://Scripts/case_engine/CaseFolderRender.gd")
+const ANTI_REPEAT_RECENT_WINDOW: int = 6
+const ANTI_REPEAT_NEAR_DUP_SCORE: int = 9
+const ANTI_REPEAT_SOFT_STEER_SCORE: int = 5
 
 var _last_payload: Dictionary = {}
 var _last_audit: Dictionary = {}
@@ -18,6 +21,8 @@ var _last_gate_attempts: int = 0
 var _last_gate_reject_codes: PackedStringArray = []
 var _folio_spreads: Array[Dictionary] = []
 var _folio_spread_index: int = 0
+var _session_anti_repeat_seed_text: String = ""
+var _session_anti_repeat_memory: Dictionary = {}
 
 @onready var SeedEdit: LineEdit = %SeedEdit
 @onready var IndexSpin: SpinBox = %IndexSpin
@@ -145,6 +150,8 @@ func _on_ClearBtn_pressed() -> void:
 	_last_gate_trace = []
 	_last_gate_attempts = 0
 	_last_gate_reject_codes = []
+	_session_anti_repeat_seed_text = ""
+	_session_anti_repeat_memory = {}
 
 	Summary.clear()
 	Summary.append_text("[b]Case Engine Lab (Editor)[/b]\n")
@@ -318,7 +325,8 @@ func _generate(advance_index: bool) -> void:
 		idx += 1
 		IndexSpin.value = float(idx)
 
-	var gate: Dictionary = _run_gate(run_seed_u64, run_seed_text, idx, rr_start, null)
+	var session_memory: Dictionary = _session_anti_repeat_memory_for_seed(run_seed_text)
+	var gate: Dictionary = _run_gate(run_seed_u64, run_seed_text, idx, rr_start, session_memory, advance_index)
 	if gate.is_empty():
 		_last_payload = {
 			"ok": false,
@@ -401,10 +409,13 @@ func _run_batch(n: int) -> void:
 	var max_rerolls_used: int = 0
 	var exhausted_ct: int = 0
 	var dup_prevented: int = 0
+	var exact_dup_reject_count: int = 0
+	var near_dup_reject_count: int = 0
+	var soft_memory_steer_count: int = 0
 
 	var final_reject_code_counts: Dictionary = {}
 	var attempt_reject_code_counts: Dictionary = {}
-	var seen_fp: Dictionary = {}
+	var anti_repeat_memory: Dictionary = _new_anti_repeat_memory(run_seed_text)
 	var accepted_count: int = 0
 	var accepted_pool_totals: Dictionary = _zero_pool_counts()
 	var accepted_reliability_totals_by_tab: Dictionary = _zero_reliability_by_tab()
@@ -418,6 +429,7 @@ func _run_batch(n: int) -> void:
 	var guilt_tell_hit_count: int = 0
 	var first_accepted_cases: Array[Dictionary] = []
 	var first_rejected_cases: Array[Dictionary] = []
+	var rejected_case_artifacts: Array[String] = []
 
 	var salvaged_anchor_only_corrupted_count: int = 0
 	var salvaged_missing_conflict_group_count: int = 0
@@ -428,7 +440,7 @@ func _run_batch(n: int) -> void:
 
 	for i in range(n):
 		var idx := start_idx + i
-		var gate: Dictionary = _run_gate(run_seed_u64, run_seed_text, idx, rr_start, seen_fp)
+		var gate: Dictionary = _run_gate(run_seed_u64, run_seed_text, idx, rr_start, anti_repeat_memory, true)
 
 		var payload: Dictionary = gate.get("payload", {}) as Dictionary
 		var report: Dictionary = gate.get("report", {"level":"REJECT","items":[]}) as Dictionary
@@ -460,6 +472,9 @@ func _run_batch(n: int) -> void:
 		if bool(gate.get("exhausted", false)):
 			exhausted_ct += 1
 		dup_prevented += int(gate.get("dup_rejects", 0))
+		exact_dup_reject_count += int(gate.get("exact_dup_rejects", 0))
+		near_dup_reject_count += int(gate.get("near_dup_rejects", 0))
+		soft_memory_steer_count += int(gate.get("soft_memory_steers", 0))
 
 		if final_outcome == "REJECT":
 			reject_ct += 1
@@ -501,8 +516,11 @@ func _run_batch(n: int) -> void:
 		salvaged_missing_conflict_group_count += int(digest.get("salvaged_missing_conflict_group_count", 0))
 		salvaged_unresolvable_conflict_group_count += int(digest.get("salvaged_unresolvable_conflict_group_count", 0))
 		if final_outcome == "REJECT":
+			var rejected_artifact_path: String = _write_rejected_case_artifact(run_seed_text, idx, final_rr, payload, audit)
+			if rejected_artifact_path != "":
+				rejected_case_artifacts.append(rejected_artifact_path)
 			if first_rejected_cases.size() < 8:
-				first_rejected_cases.append(_batch_case_sample(idx, final_rr, fp, final_outcome, _string_array_from_packed(final_reject_codes), _string_array_from_packed(attempt_reject_codes), attempts, audit))
+				first_rejected_cases.append(_batch_case_sample(idx, final_rr, fp, final_outcome, _string_array_from_packed(final_reject_codes), _string_array_from_packed(attempt_reject_codes), attempts, audit, rejected_artifact_path))
 			continue
 		accepted_count += 1
 		if first_accepted_cases.size() < 8:
@@ -544,6 +562,9 @@ func _run_batch(n: int) -> void:
 		"warn_count": warn_ct,
 		"reject_count": reject_ct,
 		"duplicate_prevented_count": dup_prevented,
+		"exact_duplicate_reject_count": exact_dup_reject_count,
+		"near_duplicate_reject_count": near_dup_reject_count,
+		"soft_memory_steer_count": soft_memory_steer_count,
 		"exhausted_count": exhausted_ct,
 		"average_gate_ms": avg_ms,
 		"max_gate_ms": max_gate_ms,
@@ -570,6 +591,7 @@ func _run_batch(n: int) -> void:
 		},
 		"first_accepted_cases": first_accepted_cases,
 		"first_rejected_cases": first_rejected_cases,
+		"rejected_case_artifacts": rejected_case_artifacts,
 	}
 	_write_batch_report(run_seed_text, _last_batch_report)
 
@@ -581,6 +603,12 @@ func _run_batch(n: int) -> void:
 	Summary.append_text("avg_gate_ms: %.3f  max_gate_ms: %.3f\n" % [avg_ms, max_gate_ms])
 	Summary.append_text("avg_rerolls_used: %.3f  max_rerolls_used: %d\n" % [avg_rerolls, max_rerolls_used])
 	Summary.append_text("dup_prevented: %d  exhausted: %d\n" % [dup_prevented, exhausted_ct])
+	Summary.append_text("anti_repeat: exact=%d near=%d soft=%d window=%d\n" % [
+		exact_dup_reject_count,
+		near_dup_reject_count,
+		soft_memory_steer_count,
+		ANTI_REPEAT_RECENT_WINDOW,
+	])
 	Summary.append_text("accepted audit: missing_timeline=%d missing_alibi_or_capability=%d missing_motive_or_relationship=%d\n" % [
 		missing_strong_timeline_anchor_count,
 		missing_strong_alibi_or_capability_anchor_count,
@@ -614,15 +642,18 @@ func _run_batch(n: int) -> void:
 	JsonText.text = JSON.stringify(_last_batch_report, "\t", true)
 	_update_preview()
 
-func _run_gate(run_seed_u64: int, run_seed_text: String, suspect_index: int, rr_start: int, seen_fp: Variant) -> Dictionary:
+func _run_gate(run_seed_u64: int, run_seed_text: String, suspect_index: int, rr_start: int, anti_repeat_state: Variant, use_recent_memory: bool) -> Dictionary:
 	var trace: Array[Dictionary] = []
 	var attempt_reject_codes: PackedStringArray = []
 	var dup_rejects: int = 0
+	var exact_dup_rejects: int = 0
+	var near_dup_rejects: int = 0
+	var soft_memory_steers: int = 0
 	var attempt_history: Array[Dictionary] = []
-	var seen_map: Dictionary = {}
-	var has_seen_map: bool = seen_fp is Dictionary
-	if has_seen_map:
-		seen_map = seen_fp as Dictionary
+	var anti_repeat_memory: Dictionary = {}
+	var has_anti_repeat_memory: bool = anti_repeat_state is Dictionary
+	if has_anti_repeat_memory:
+		anti_repeat_memory = anti_repeat_state as Dictionary
 
 	var rr: int = rr_start
 	var attempts: int = 0
@@ -649,16 +680,6 @@ func _run_gate(run_seed_u64: int, run_seed_text: String, suspect_index: int, rr_
 			rr += 1
 			continue
 
-		var fp: String = str(payload.get("fingerprint", ""))
-		if has_seen_map and fp != "" and seen_map.has(fp):
-			var dup_code: String = "DUP_FINGERPRINT"
-			dup_rejects += 1
-			attempt_reject_codes.append(dup_code)
-			trace.append({"rr": rr, "level": "REJECT", "code": dup_code, "ms": gen_ms, "faults": ""})
-			attempt_history.append({"rr": rr, "level": "REJECT", "reject_codes": [dup_code], "ms": gen_ms, "faults": ""})
-			rr += 1
-			continue
-
 		var view_payload: Dictionary = payload
 		var applied_faults: PackedStringArray = []
 		if _faults_enabled() and _faults_apply_this_attempt(step):
@@ -680,10 +701,42 @@ func _run_gate(run_seed_u64: int, run_seed_text: String, suspect_index: int, rr_
 			rr += 1
 			continue
 
+		if has_anti_repeat_memory and use_recent_memory:
+			var anti_repeat_decision: Dictionary = _anti_repeat_decision(anti_repeat_memory, payload)
+			var anti_repeat_code: String = str(anti_repeat_decision.get("code", ""))
+			if anti_repeat_code != "":
+				if anti_repeat_code == "DUP_FINGERPRINT":
+					dup_rejects += 1
+					exact_dup_rejects += 1
+				elif anti_repeat_code == "NEAR_DUPLICATE_CASE":
+					dup_rejects += 1
+					near_dup_rejects += 1
+				else:
+					soft_memory_steers += 1
+				attempt_reject_codes.append(anti_repeat_code)
+				trace.append({
+					"rr": rr,
+					"level": "REJECT",
+					"code": anti_repeat_code,
+					"ms": gen_ms,
+					"faults": faults_text,
+					"anti_repeat_score": int(anti_repeat_decision.get("score", 0)),
+				})
+				attempt_history.append({
+					"rr": rr,
+					"level": "REJECT",
+					"reject_codes": [anti_repeat_code],
+					"ms": gen_ms,
+					"faults": faults_text,
+					"anti_repeat_score": int(anti_repeat_decision.get("score", 0)),
+				})
+				rr += 1
+				continue
+
 		trace.append({"rr": rr, "level": level, "code": "", "ms": gen_ms, "faults": faults_text})
 		attempt_history.append({"rr": rr, "level": level, "reject_codes": [], "ms": gen_ms, "faults": faults_text})
-		if has_seen_map and fp != "":
-			seen_map[fp] = true
+		if has_anti_repeat_memory:
+			_anti_repeat_accept(anti_repeat_memory, payload)
 
 		return {
 			"payload": payload,
@@ -697,6 +750,9 @@ func _run_gate(run_seed_u64: int, run_seed_text: String, suspect_index: int, rr_
 			"attempt_reject_codes": attempt_reject_codes,
 			"attempt_history": attempt_history,
 			"dup_rejects": dup_rejects,
+			"exact_dup_rejects": exact_dup_rejects,
+			"near_dup_rejects": near_dup_rejects,
+			"soft_memory_steers": soft_memory_steers,
 			"exhausted": false,
 		}
 
@@ -716,6 +772,9 @@ func _run_gate(run_seed_u64: int, run_seed_text: String, suspect_index: int, rr_
 		"attempt_reject_codes": attempt_reject_codes,
 		"attempt_history": attempt_history,
 		"dup_rejects": dup_rejects,
+		"exact_dup_rejects": exact_dup_rejects,
+		"near_dup_rejects": near_dup_rejects,
+		"soft_memory_steers": soft_memory_steers,
 		"exhausted": exhausted,
 	}
 
@@ -1109,6 +1168,23 @@ func _write_batch_report(seed_text: String, batch_report: Dictionary) -> void:
 	var report_path := "%s%s_batch_report.json" % [dir, _safe_filename(seed_text)]
 	_write_json_file(report_path, batch_report)
 
+func _write_rejected_case_artifact(seed_text: String, suspect_index: int, final_rr: int, payload: Dictionary, audit: Dictionary) -> String:
+	if payload.is_empty():
+		return ""
+	var dir := "user://case_engine_lab/rejects/"
+	var abs_dir := ProjectSettings.globalize_path(dir)
+	DirAccess.make_dir_recursive_absolute(abs_dir)
+	var fp: String = str(payload.get("fingerprint", "reject"))
+	var fp8: String = fp.substr(0, 8) if fp.length() >= 8 else fp
+	var base_name: String = "%s_idx%d_rr%d_%s" % [_safe_filename(seed_text), suspect_index, final_rr, fp8]
+	var payload_path: String = "%s%s.json" % [dir, base_name]
+	var audit_path: String = "%s%s_audit.json" % [dir, base_name]
+	var saved_payload: bool = _write_json_file(payload_path, payload)
+	var saved_audit: bool = _write_json_file(audit_path, audit)
+	if not saved_payload or not saved_audit:
+		return ""
+	return ProjectSettings.globalize_path(payload_path)
+
 func _zero_pool_counts() -> Dictionary:
 	return {
 		"ALIBI": 0,
@@ -1163,7 +1239,165 @@ func _string_array_from_packed(values: PackedStringArray) -> Array[String]:
 		out.append(str(value))
 	return out
 
-func _batch_case_sample(idx: int, final_rr: int, fingerprint: String, level: String, final_reject_codes: Array[String], attempt_reject_codes: Array[String], attempt_count: int, audit: Dictionary) -> Dictionary:
+func _new_anti_repeat_memory(run_seed_text: String) -> Dictionary:
+	return {
+		"run_seed_text": run_seed_text,
+		"seen_fingerprints": {},
+		"recent_cases": [],
+	}
+
+func _session_anti_repeat_memory_for_seed(run_seed_text: String) -> Dictionary:
+	if _session_anti_repeat_seed_text != run_seed_text:
+		_session_anti_repeat_seed_text = run_seed_text
+		_session_anti_repeat_memory = _new_anti_repeat_memory(run_seed_text)
+	return _session_anti_repeat_memory
+
+func _anti_repeat_decision(memory: Dictionary, payload: Dictionary) -> Dictionary:
+	var signature: Dictionary = _anti_repeat_signature(payload)
+	var fingerprint: String = str(signature.get("fingerprint", ""))
+	var seen_fingerprints: Dictionary = memory.get("seen_fingerprints", {}) as Dictionary
+	if fingerprint != "" and seen_fingerprints.has(fingerprint):
+		return {
+			"code": "DUP_FINGERPRINT",
+			"score": 100,
+		}
+
+	var best_score: int = 0
+	var recent_cases: Array = memory.get("recent_cases", []) as Array
+	for recent_v in recent_cases:
+		if not (recent_v is Dictionary):
+			continue
+		var recent: Dictionary = recent_v as Dictionary
+		var score: int = 0
+		var shared_templates: int = _string_overlap_count(signature.get("template_ids", []), recent.get("template_ids", []))
+		var shared_lines: int = _string_overlap_count(signature.get("line_hashes", []), recent.get("line_hashes", []))
+		if str(signature.get("charge_hash", "")) != "" and str(signature.get("charge_hash", "")) == str(recent.get("charge_hash", "")):
+			score += 4
+		if str(signature.get("crime_type", "")) != "" and str(signature.get("crime_type", "")) == str(recent.get("crime_type", "")):
+			score += 1
+		if str(signature.get("variant_skeleton_id", "")) != "" and str(signature.get("variant_skeleton_id", "")) == str(recent.get("variant_skeleton_id", "")):
+			score += 2
+		if str(signature.get("location", "")) != "" and str(signature.get("location", "")) == str(recent.get("location", "")):
+			score += 2
+		if str(signature.get("schedule", "")) != "" and str(signature.get("schedule", "")) == str(recent.get("schedule", "")):
+			score += 1
+		if str(signature.get("occupation", "")) != "" and str(signature.get("occupation", "")) == str(recent.get("occupation", "")):
+			score += 1
+		if str(signature.get("full_name", "")) != "" and str(signature.get("full_name", "")) == str(recent.get("full_name", "")):
+			score += 4
+		score += mini(shared_templates, 3)
+		score += mini(shared_lines, 4)
+		if score > best_score:
+			best_score = score
+		if best_score >= ANTI_REPEAT_NEAR_DUP_SCORE:
+			return {
+				"code": "NEAR_DUPLICATE_CASE",
+				"score": best_score,
+			}
+	if best_score >= ANTI_REPEAT_SOFT_STEER_SCORE:
+		return {
+			"code": "RECENT_MEMORY_STEER",
+			"score": best_score,
+		}
+	return {
+		"code": "",
+		"score": best_score,
+	}
+
+func _anti_repeat_accept(memory: Dictionary, payload: Dictionary) -> void:
+	var signature: Dictionary = _anti_repeat_signature(payload)
+	var fingerprint: String = str(signature.get("fingerprint", ""))
+	var seen_fingerprints: Dictionary = memory.get("seen_fingerprints", {}) as Dictionary
+	var recent_cases: Array = memory.get("recent_cases", []) as Array
+	if fingerprint != "" and seen_fingerprints.has(fingerprint):
+		memory["seen_fingerprints"] = seen_fingerprints
+		return
+	if fingerprint != "":
+		seen_fingerprints[fingerprint] = true
+	memory["seen_fingerprints"] = seen_fingerprints
+	recent_cases.append(signature)
+	while recent_cases.size() > ANTI_REPEAT_RECENT_WINDOW:
+		recent_cases.remove_at(0)
+	memory["recent_cases"] = recent_cases
+
+func _anti_repeat_signature(payload: Dictionary) -> Dictionary:
+	var suspect: Dictionary = payload.get("suspect", {}) as Dictionary
+	var tabs: Dictionary = suspect.get("tabs", {}) as Dictionary
+	var truth_bundle: Dictionary = payload.get("truth_bundle", {}) as Dictionary
+	var facts: Dictionary = truth_bundle.get("facts", {}) as Dictionary
+	var profile_bundle: Dictionary = truth_bundle.get("profile_bundle", {}) as Dictionary
+	var charge_sheet: Dictionary = suspect.get("charge_sheet", {}) as Dictionary
+	var template_ids: Array[String] = []
+	var line_hashes: Array[String] = []
+	var charge_lines: Array[String] = [
+		str(charge_sheet.get("title", "")),
+		str(charge_sheet.get("brief", "")),
+	]
+	for charge_v in charge_sheet.get("charges", []) as Array:
+		charge_lines.append(str(charge_v))
+	for line in charge_lines:
+		var normalized_line: String = _normalize_repeat_text(line)
+		if normalized_line != "":
+			var charge_line_hash: String = normalized_line.sha256_text()
+			if not line_hashes.has(charge_line_hash):
+				line_hashes.append(charge_line_hash)
+	for tab_id in ["ALIBI", "TIMELINE", "CAPABILITY", "MOTIVE", "PROFILE"]:
+		var tab_data: Dictionary = tabs.get(tab_id, {}) as Dictionary
+		for fact_v in tab_data.get("facts", []) as Array:
+			if not (fact_v is Dictionary):
+				continue
+			var fact: Dictionary = fact_v as Dictionary
+			var template_id: String = str(fact.get("template_id", "")).strip_edges()
+			if template_id != "" and not template_ids.has(template_id):
+				template_ids.append(template_id)
+			var normalized_fact_line: String = _normalize_repeat_text(str(fact.get("text", "")))
+			if normalized_fact_line != "":
+				var fact_hash: String = normalized_fact_line.sha256_text()
+				if not line_hashes.has(fact_hash):
+					line_hashes.append(fact_hash)
+	template_ids.sort()
+	line_hashes.sort()
+	var normalized_charge_lines: Array[String] = []
+	for line in charge_lines:
+		var normalized_charge_line: String = _normalize_repeat_text(line)
+		if normalized_charge_line != "":
+			normalized_charge_lines.append(normalized_charge_line)
+	var charge_hash: String = JSON.stringify(normalized_charge_lines).sha256_text()
+	return {
+		"fingerprint": str(payload.get("fingerprint", "")),
+		"crime_type": str(truth_bundle.get("crime_type", "")),
+		"variant_skeleton_id": str(payload.get("variant_skeleton_id", truth_bundle.get("variant_skeleton_id", ""))),
+		"location": str(facts.get("location", "")),
+		"time_window": str(facts.get("time_window", "")),
+		"schedule": str(profile_bundle.get("schedule_tag", facts.get("schedule_label", ""))),
+		"occupation": str(profile_bundle.get("occupation_id", facts.get("occupation_id", ""))),
+		"full_name": str(facts.get("full_name", "")),
+		"template_ids": template_ids,
+		"line_hashes": line_hashes,
+		"charge_hash": charge_hash,
+	}
+
+func _normalize_repeat_text(text: String) -> String:
+	var normalized: String = text.strip_edges().to_lower().replace("\r", " ").replace("\n", " ").replace("\t", " ")
+	while normalized.find("  ") >= 0:
+		normalized = normalized.replace("  ", " ")
+	return normalized
+
+func _string_overlap_count(left: Variant, right: Variant) -> int:
+	if not (left is Array) or not (right is Array):
+		return 0
+	var right_items: Array = right as Array
+	var left_items: Array = left as Array
+	var right_map: Dictionary = {}
+	for item in right_items:
+		right_map[str(item)] = true
+	var count: int = 0
+	for item in left_items:
+		if right_map.has(str(item)):
+			count += 1
+	return count
+
+func _batch_case_sample(idx: int, final_rr: int, fingerprint: String, level: String, final_reject_codes: Array[String], attempt_reject_codes: Array[String], attempt_count: int, audit: Dictionary, artifact_path: String = "") -> Dictionary:
 	return {
 		"suspect_index": idx,
 		"final_rr": final_rr,
@@ -1173,6 +1407,7 @@ func _batch_case_sample(idx: int, final_rr: int, fingerprint: String, level: Str
 		"final_reject_codes": final_reject_codes,
 		"attempt_reject_codes": attempt_reject_codes,
 		"attempt_count": attempt_count,
+		"artifact_path": artifact_path,
 		"final_audit_digest": CaseEngineLabAudit.compact_digest(audit),
 	}
 

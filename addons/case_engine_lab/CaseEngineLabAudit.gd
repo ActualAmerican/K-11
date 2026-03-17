@@ -153,7 +153,10 @@ static func build_case_audit(payload: Dictionary, report: Dictionary, gate_meta:
 	)
 	if final_outcome == "PASS" and not final_case_consistent:
 		final_outcome = "REJECT"
-		_append_unique_string(final_reject_codes, "AUDIT_INCONSISTENT_PASS")
+		_append_unique_string(final_reject_codes, "AUDIT_FINAL_CONSISTENCY_FAIL")
+	var validator_level: String = str(report.get("level", "REJECT"))
+	if final_outcome == "REJECT" and validator_level == "PASS":
+		validator_level = "REJECT"
 
 	return {
 		"gate_result": {
@@ -213,7 +216,7 @@ static func build_case_audit(payload: Dictionary, report: Dictionary, gate_meta:
 			"profile_notes_separate_from_fixed_profile_card": profile_notes_separate,
 		},
 		"player_surface_fairness_checks": {
-			"validator_level": str(report.get("level", "REJECT")),
+			"validator_level": validator_level,
 			"final_outcome": final_outcome,
 			"reject_codes": final_reject_codes,
 			"guilt_tell_check_passed": not _has_any_code(final_reject_codes, ["PLAYER_SURFACE_GUILT_TELL", "GUILT_TELL"]),

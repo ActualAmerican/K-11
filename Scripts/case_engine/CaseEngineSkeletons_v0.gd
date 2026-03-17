@@ -170,6 +170,7 @@ static func _all() -> Array[Dictionary]:
 				{"tab": CaseEngineTypes.TAB_MOTIVE, "fact_type": CaseEngineTypes.FACT_MOTIVE_PRESSURE, "anchor": CaseEngineTypes.ANCHOR_MOTIVE}
 			],
 			"optional_atoms": [
+				{"tab": CaseEngineTypes.TAB_TIMELINE, "fact_type": CaseEngineTypes.FACT_TIMELINE_NOTE},
 				{"tab": CaseEngineTypes.TAB_MOTIVE, "fact_type": CaseEngineTypes.FACT_MOTIVE_RELATIONSHIP},
 				{"tab": CaseEngineTypes.TAB_PROFILE, "fact_type": CaseEngineTypes.FACT_PROFILE_BEHAVIOR}
 			],
@@ -228,6 +229,7 @@ static func _all() -> Array[Dictionary]:
 				{"tab": CaseEngineTypes.TAB_MOTIVE, "fact_type": CaseEngineTypes.FACT_MOTIVE_RELATIONSHIP, "anchor": CaseEngineTypes.ANCHOR_RELATIONSHIP}
 			],
 			"optional_atoms": [
+				{"tab": CaseEngineTypes.TAB_TIMELINE, "fact_type": CaseEngineTypes.FACT_TIMELINE_NOTE},
 					{"tab": CaseEngineTypes.TAB_CAPABILITY, "fact_type": CaseEngineTypes.FACT_CAPABILITY_TRAINING},
 				{"tab": CaseEngineTypes.TAB_PROFILE, "fact_type": CaseEngineTypes.FACT_PROFILE_BEHAVIOR}
 			],

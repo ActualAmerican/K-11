@@ -437,6 +437,22 @@ static func _build_tabs(rng: RandomNumberGenerator, truth_bundle: Dictionary, sk
 		atoms.append(fact)
 		fact_seq += 1
 
+	var ensured_conflict_members: Dictionary = _ensure_conflict_seed_atoms(
+		rng,
+		templates,
+		atoms,
+		skeleton,
+		truth_bundle,
+		fact_seq
+	)
+	if not bool(ensured_conflict_members.get("ok", false)):
+		return ensured_conflict_members
+	atoms = ensured_conflict_members.get("atoms", atoms)
+	fact_seq = int(ensured_conflict_members.get("fact_seq", fact_seq))
+	_trace_push(gen_trace, "CONFLICT_SEED_FACT_TYPES_ENSURED", {
+		"ensured_members": ensured_conflict_members.get("ensured", []),
+	})
+
 	_apply_conflict_seeds(atoms, skeleton)
 	_trace_push(gen_trace, "RELIABILITY_CONFLICTS", {
 		"conflict_seed_count": (skeleton.get("conflict_seeds", []) as Array).size(),
@@ -600,6 +616,67 @@ static func _apply_conflict_seeds(atoms: Array[Dictionary], skeleton: Dictionary
 			continue
 		(atoms[left_idx] as Dictionary)["conflict_group"] = group
 		(atoms[right_idx] as Dictionary)["conflict_group"] = group
+
+static func _ensure_conflict_seed_atoms(
+	rng: RandomNumberGenerator,
+	templates: Dictionary,
+	atoms: Array[Dictionary],
+	skeleton: Dictionary,
+	truth_bundle: Dictionary,
+	fact_seq: int
+) -> Dictionary:
+	var ensured: Array[String] = []
+	for seed_v in skeleton.get("conflict_seeds", []) as Array:
+		if not (seed_v is Dictionary):
+			continue
+		var seed: Dictionary = seed_v as Dictionary
+		var group_id: String = str(seed.get("group", ""))
+		for fact_type in [str(seed.get("left", "")), str(seed.get("right", ""))]:
+			if fact_type == "" or _count_fact_type_instances(atoms, fact_type) > 0:
+				continue
+			var spec: Dictionary = _skeleton_atom_spec_for_fact_type(skeleton, fact_type)
+			if spec.is_empty():
+				return {
+					"ok": false,
+					"error": "MISSING_CONFLICT_MEMBER_SPEC",
+					"error_details": {
+						"group_id": group_id,
+						"required_fact_type": fact_type,
+					}
+				}
+			var fact: Dictionary = _materialize_atom(rng, templates, truth_bundle, spec, fact_seq)
+			if fact.is_empty():
+				return {
+					"ok": false,
+					"error": "NO_MATERIALIZABLE_CONFLICT_MEMBER",
+					"error_details": {
+						"group_id": group_id,
+						"required_fact_type": fact_type,
+					}
+				}
+			atoms.append(fact)
+			fact_seq += 1
+			ensured.append("%s:%s" % [group_id, fact_type])
+	return {
+		"ok": true,
+		"atoms": atoms,
+		"fact_seq": fact_seq,
+		"ensured": ensured,
+	}
+
+static func _count_fact_type_instances(atoms: Array[Dictionary], fact_type: String) -> int:
+	var count: int = 0
+	for atom_v in atoms:
+		if atom_v is Dictionary and str((atom_v as Dictionary).get("fact_type", "")) == fact_type:
+			count += 1
+	return count
+
+static func _skeleton_atom_spec_for_fact_type(skeleton: Dictionary, fact_type: String) -> Dictionary:
+	for key in ["required_atoms", "optional_atoms"]:
+		for atom_v in skeleton.get(key, []) as Array:
+			if atom_v is Dictionary and str((atom_v as Dictionary).get("fact_type", "")) == fact_type:
+				return (atom_v as Dictionary).duplicate(true)
+	return {}
 
 static func _bucket_atoms_into_tabs(atoms: Array[Dictionary], run_seed_u64: int, suspect_index: int, reroll_index: int) -> Dictionary:
 	var tabs: Dictionary = {}
