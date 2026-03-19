@@ -48,6 +48,48 @@ static func derive_seed(base_seed_u64: int, label: String, index: int = 0) -> in
 static func derive_camera_schedule_seed(encounter_seed_u64: int, suspect_index: int = 0) -> int:
 	return derive_seed(encounter_seed_u64, "camera_schedule", suspect_index)
 
+static func derive_exit_protocol_seed(run_seed_u64: int) -> int:
+	return derive_seed(run_seed_u64, "exit_protocol", 0)
+
+static func build_exit_protocol_params(run_seed_u64: int) -> Dictionary:
+	var exit_seed_u64: int = derive_exit_protocol_seed(run_seed_u64)
+	var rng: RandomNumberGenerator = make_rng(exit_seed_u64)
+	var drawer_combo: Array[int] = []
+	var combo_length: int = rng.randi_range(4, 6)
+	for i in range(combo_length):
+		drawer_combo.append(rng.randi_range(0, 9))
+
+	var color_pool: Array[String] = [
+		"RED",
+		"BLUE",
+		"GREEN",
+		"YELLOW",
+		"WHITE",
+		"BLACK",
+		"ORANGE",
+	]
+	var wire_colors: Array[String] = []
+	var wire_count: int = rng.randi_range(3, 5)
+	for i in range(wire_count):
+		var pick_idx: int = rng.randi_range(0, color_pool.size() - 1)
+		wire_colors.append(color_pool[pick_idx])
+		color_pool.remove_at(pick_idx)
+
+	var remaining_colors: Array[String] = wire_colors.duplicate()
+	var wire_cut_order: Array[String] = []
+	while not remaining_colors.is_empty():
+		var order_idx: int = rng.randi_range(0, remaining_colors.size() - 1)
+		wire_cut_order.append(remaining_colors[order_idx])
+		remaining_colors.remove_at(order_idx)
+
+	return {
+		"seed_u64_hex": hex16(exit_seed_u64),
+		"drawer_combo": drawer_combo,
+		"wire_colors": wire_colors,
+		"wire_cut_order": wire_cut_order,
+		"vent_screw_count": rng.randi_range(4, 8),
+	}
+
 static func format_run_seed_u63(seed_u64: int) -> String:
 	return "K11-%s" % _to_base36(normalize_seed(seed_u64))
 

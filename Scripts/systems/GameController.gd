@@ -165,6 +165,7 @@ var _camera_schedule_seed_u64: int = 0
 var _camera_schedule_plan: Array[Dictionary] = []
 var _camera_schedule_step: int = 0
 var _camera_schedule_remaining_s: float = 0.0
+var _exit_protocol_params: Dictionary = {}
 const CAMERA_SCHEDULE_STEP_COUNT: int = 12
 const CAMERA_SCHEDULE_MIN_DWELL_S: int = 6
 const CAMERA_SCHEDULE_MAX_DWELL_S: int = 14
@@ -1242,7 +1243,12 @@ func _open_case_handling_overlay_with_transition() -> void:
 		_noise_carryover_start_value_next_suspect = -1
 		_case_handling_live_noise_mode_active = true
 		_case_handling_noise_accrued_scaled = 0
-	var payload: Dictionary = {"title": "CASE HANDLING", "body": "Placeholder (9.2)...", "on_finished": Callable(self, "_on_case_handling_filed")}
+	var payload: Dictionary = {
+		"title": "CASE HANDLING",
+		"body": "Placeholder (9.2)...",
+		"on_finished": Callable(self, "_on_case_handling_filed"),
+		"exit_protocol": _exit_protocol_params.duplicate(true),
+	}
 	payload.merge(_build_case_handling_pip_payload(), true)
 	_case_transition_busy = true
 	await _fade_to_case_transition_black(case_handling_open_fade_out_s, case_handling_open_black_hold_s)
@@ -2014,7 +2020,7 @@ func _open_computer_terminal() -> void:
 func _open_vent_exit_overlay() -> void:
 	if overlay_open:
 		return
-	open_overlay("VENT_EXIT", {})
+	open_overlay("VENT_EXIT", {"exit_protocol": _exit_protocol_params.duplicate(true)})
 
 func request_exit_protocol_success() -> void:
 	_ledger_end_case_if_active("ESCAPED", 0)
@@ -2397,6 +2403,17 @@ func _build_camera_schedule_for_current_suspect() -> void:
 		_camera_schedule_plan_summary(),
 	])
 
+func _rebuild_exit_protocol_params() -> void:
+	_exit_protocol_params = SeedUtil.build_exit_protocol_params(run_seed_u64)
+	_sync_exit_protocol_debug_payload()
+	_log("EXIT_PROTOCOL INIT seed=%s combo=%s wires=%s order=%s screws=%d" % [
+		str(_exit_protocol_params.get("seed_u64_hex", "")),
+		_exit_protocol_combo_text(),
+		_join_variant_values(_exit_protocol_params.get("wire_colors", []) as Array),
+		_join_variant_values(_exit_protocol_params.get("wire_cut_order", []) as Array),
+		int(_exit_protocol_params.get("vent_screw_count", 0)),
+	])
+
 func _tick_camera_schedule(delta: float) -> void:
 	if current_suspect == null or _intermission_active or _camera_schedule_plan.is_empty():
 		return
@@ -2446,6 +2463,11 @@ func _sync_camera_schedule_debug_payload() -> void:
 		"plan": plan_rows,
 	}
 
+func _sync_exit_protocol_debug_payload() -> void:
+	if _dev_case_payload.is_empty():
+		return
+	_dev_case_payload["exit_protocol"] = _exit_protocol_params.duplicate(true)
+
 func _log_camera_schedule_pause(action: String) -> void:
 	if current_suspect == null or _camera_schedule_plan.is_empty():
 		return
@@ -2468,6 +2490,18 @@ func _camera_schedule_plan_summary() -> String:
 			float(step_row.get("after_s", 0.0)),
 		])
 	return ",".join(rows)
+
+func _exit_protocol_combo_text() -> String:
+	var parts: Array[String] = []
+	for digit_v in _exit_protocol_params.get("drawer_combo", []):
+		parts.append(str(int(digit_v)))
+	return "".join(parts)
+
+func _join_variant_values(values: Array) -> String:
+	var out: Array[String] = []
+	for value in values:
+		out.append(str(value))
+	return ",".join(out)
 
 func _advance_to_next_suspect_with_transition(reason: String = "") -> void:
 	if _case_transition_busy:
@@ -2528,6 +2562,13 @@ func _update_hud() -> void:
 		SeedUtil.hex16(_camera_schedule_seed_u64),
 		"YES" if overlay_open else "NO",
 	]
+	var exit_line: String = "EXIT: combo=%s wires=%s order=%s screws=%d seed=%s" % [
+		_exit_protocol_combo_text(),
+		_join_variant_values(_exit_protocol_params.get("wire_colors", []) as Array),
+		_join_variant_values(_exit_protocol_params.get("wire_cut_order", []) as Array),
+		int(_exit_protocol_params.get("vent_screw_count", 0)),
+		str(_exit_protocol_params.get("seed_u64_hex", "")),
+	]
 
 	var danger_fill: int = 0
 	var full_list: Array[String] = []
@@ -2572,6 +2613,7 @@ func _update_hud() -> void:
 		_format_hud_line("SEED", seed_text),
 		_format_hud_line("SEED64", seed64_text),
 		camera_line,
+		exit_line,
 		_format_hud_line("SUSPECT_IDX", str(suspect_index)),
 		_format_hud_line("SUSPECT_SEED", suspect_seed_text),
 		_format_hud_line("SUSPECT_ID", current_suspect.short_id() if current_suspect != null else "n/a"),
@@ -2713,6 +2755,9 @@ func _dev_export_suspect() -> void:
 		return
 	var payload: Dictionary = SuspectIO.to_payload_dict(current_suspect, _dev_case_payload)
 	_dev_case_payload = payload.duplicate(true)
+	_sync_exit_protocol_debug_payload()
+	_sync_camera_schedule_debug_payload()
+	payload = _dev_case_payload.duplicate(true)
 	var json: String = JSON.stringify(payload, "\t", true)
 	var fp_obj: String = SuspectIO.fingerprint_suspect(current_suspect)
 	var fp_payload: String = str(payload.get("fingerprint", ""))
@@ -2920,6 +2965,7 @@ func _apply_imported_suspect(s: SuspectData, source: String, payload: Dictionary
 	run_seed_text = s.run_seed_text
 	run_seed_u64 = s.run_seed_u64
 	run_seed_value = _seed_parse(run_seed_text)
+	_rebuild_exit_protocol_params()
 
 	suspect_index = s.suspect_index
 	suspect_seed_value = s.suspect_seed_u64
@@ -3037,6 +3083,7 @@ func _reset_run_state() -> void:
 	if _computer_screen_window != null and _computer_screen_window.has_method("set_enabled"):
 		_computer_screen_window.call("set_enabled", true)
 	suspect_index = 0
+	_rebuild_exit_protocol_params()
 	_refresh_suspect_seed()
 	if _revolver_sys != null:
 		_revolver_sys.setup(run_seed_u64)
@@ -3078,6 +3125,7 @@ func _init_seed() -> void:
 	run_seed_text = _seed_format(seed_value)
 	_log("SEED = %s (%d)" % [run_seed_text, run_seed_value])
 	run_seed_u64 = SeedUtil.normalize_seed(run_seed_value)
+	_rebuild_exit_protocol_params()
 	suspect_index = 0
 	_refresh_suspect_seed()
 	_log("SEED64 = %s" % SeedUtil.hex16(run_seed_u64))
@@ -3273,6 +3321,7 @@ func _refresh_suspect_seed() -> void:
 	if current_suspect != null:
 		current_suspect.deadline_s = dl
 		_dev_case_payload = SuspectIO.to_payload_dict(current_suspect, {})
+		_sync_exit_protocol_debug_payload()
 	_deadline_stage_durations = []
 	_deadline_stage_index = 0
 	_deadline_stage_count = 0
