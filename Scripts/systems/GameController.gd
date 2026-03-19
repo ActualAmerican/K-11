@@ -160,6 +160,14 @@ var _suspect_import_prev_hud_visible: bool = false
 var _last_import_prompt_time_msec: int = 0
 var _camera_node: Camera2D
 var _camera_missing_logged: bool = false
+var camera_is_on: bool = true
+var _camera_schedule_seed_u64: int = 0
+var _camera_schedule_plan: Array[Dictionary] = []
+var _camera_schedule_step: int = 0
+var _camera_schedule_remaining_s: float = 0.0
+const CAMERA_SCHEDULE_STEP_COUNT: int = 12
+const CAMERA_SCHEDULE_MIN_DWELL_S: int = 6
+const CAMERA_SCHEDULE_MAX_DWELL_S: int = 14
 var _hud_refresh_accum: float = 0.0
 const HUD_REFRESH_INTERVAL: float = 0.1
 var _dev_event_log: Array[String] = []
@@ -239,6 +247,7 @@ func _process(_delta: float) -> void:
 			_init_seed()
 			_reset_run_state()
 	if app_state == AppState.GAME and not _run_finished:
+		_tick_camera_schedule(_delta)
 		if _phone != null and not _breach_active:
 			_phone.tick(_delta)
 		if _alarm_sys != null:
@@ -625,6 +634,7 @@ func open_overlay(id: String, payload: Dictionary = {}) -> void:
 	set_run_state(RunState.OVERLAY)
 	if dev_log_overlays:
 		_log("OVERLAY open: %s" % id)
+	_log_camera_schedule_pause("open")
 	_apply_overlay_lock(true)
 	_apply_state_policy("overlay")
 
@@ -647,6 +657,7 @@ func close_overlay() -> void:
 		_play_overflow_discharge(_overflow_discharge_reason)
 	if dev_log_overlays:
 		_log("OVERLAY close")
+	_log_camera_schedule_pause("close")
 	_apply_overlay_lock(false)
 	_apply_state_policy("overlay")
 
@@ -2352,6 +2363,112 @@ func _advance_to_next_suspect() -> void:
 	_refresh_suspect_seed()
 	_update_hud()
 
+func _build_camera_schedule_for_current_suspect() -> void:
+	if current_suspect == null:
+		camera_is_on = true
+		_camera_schedule_seed_u64 = 0
+		_camera_schedule_plan = []
+		_camera_schedule_step = 0
+		_camera_schedule_remaining_s = 0.0
+		_sync_camera_schedule_debug_payload()
+		_apply_camera_schedule_state()
+		return
+	_camera_schedule_seed_u64 = SeedUtil.derive_camera_schedule_seed(int(current_suspect.suspect_seed_u64), suspect_index)
+	var rng: RandomNumberGenerator = SeedUtil.make_rng(_camera_schedule_seed_u64)
+	camera_is_on = rng.randf() < 0.65
+	_camera_schedule_plan = []
+	_camera_schedule_step = 0
+	for i in range(CAMERA_SCHEDULE_STEP_COUNT):
+		var next_state: bool = false
+		if i == 0:
+			next_state = not camera_is_on
+		else:
+			next_state = not bool((_camera_schedule_plan[i - 1] as Dictionary).get("state", camera_is_on))
+		_camera_schedule_plan.append({
+			"after_s": float(rng.randi_range(CAMERA_SCHEDULE_MIN_DWELL_S, CAMERA_SCHEDULE_MAX_DWELL_S)),
+			"state": next_state,
+		})
+	_camera_schedule_remaining_s = float((_camera_schedule_plan[0] as Dictionary).get("after_s", 0.0)) if not _camera_schedule_plan.is_empty() else 0.0
+	_sync_camera_schedule_debug_payload()
+	_apply_camera_schedule_state()
+	_log("CAM_SCHEDULE INIT seed=%s state=%s plan=%s" % [
+		SeedUtil.hex16(_camera_schedule_seed_u64),
+		"ON" if camera_is_on else "OFF",
+		_camera_schedule_plan_summary(),
+	])
+
+func _tick_camera_schedule(delta: float) -> void:
+	if current_suspect == null or _intermission_active or _camera_schedule_plan.is_empty():
+		return
+	if overlay_open or _camera_schedule_step >= _camera_schedule_plan.size():
+		return
+	_camera_schedule_remaining_s -= delta
+	while _camera_schedule_remaining_s <= 0.0 and _camera_schedule_step < _camera_schedule_plan.size():
+		var step_row: Dictionary = _camera_schedule_plan[_camera_schedule_step] as Dictionary
+		camera_is_on = bool(step_row.get("state", camera_is_on))
+		_apply_camera_schedule_state()
+		_log("CAM_SCHEDULE TOGGLE step=%d/%d state=%s seed=%s" % [
+			_camera_schedule_step + 1,
+			_camera_schedule_plan.size(),
+			"ON" if camera_is_on else "OFF",
+			SeedUtil.hex16(_camera_schedule_seed_u64),
+		])
+		_camera_schedule_step += 1
+		if _camera_schedule_step >= _camera_schedule_plan.size():
+			_camera_schedule_remaining_s = 0.0
+			_sync_camera_schedule_debug_payload()
+			break
+		_camera_schedule_remaining_s += float((_camera_schedule_plan[_camera_schedule_step] as Dictionary).get("after_s", 0.0))
+		_sync_camera_schedule_debug_payload()
+
+func _apply_camera_schedule_state() -> void:
+	if _camera_node == null and app_state == AppState.GAME:
+		_cache_camera()
+	if _camera_node != null and _camera_node.has_method("set_camera_power"):
+		_camera_node.call("set_camera_power", camera_is_on)
+
+func _sync_camera_schedule_debug_payload() -> void:
+	if _dev_case_payload.is_empty():
+		return
+	var plan_rows: Array[Dictionary] = []
+	for step_v in _camera_schedule_plan:
+		var step_row: Dictionary = step_v as Dictionary
+		plan_rows.append({
+			"after_s": float(step_row.get("after_s", 0.0)),
+			"state": "ON" if bool(step_row.get("state", false)) else "OFF",
+		})
+	_dev_case_payload["camera_schedule"] = {
+		"camera_is_on": camera_is_on,
+		"schedule_seed_u64_hex": SeedUtil.hex16(_camera_schedule_seed_u64),
+		"step_index": _camera_schedule_step,
+		"remaining_s": maxf(_camera_schedule_remaining_s, 0.0),
+		"paused_for_overlay": overlay_open,
+		"plan": plan_rows,
+	}
+
+func _log_camera_schedule_pause(action: String) -> void:
+	if current_suspect == null or _camera_schedule_plan.is_empty():
+		return
+	_sync_camera_schedule_debug_payload()
+	_log("CAM_SCHEDULE %s overlay=%s state=%s next_in=%.2fs seed=%s" % [
+		action,
+		overlay_id if overlay_open else "none",
+		"ON" if camera_is_on else "OFF",
+		maxf(_camera_schedule_remaining_s, 0.0),
+		SeedUtil.hex16(_camera_schedule_seed_u64),
+	])
+
+func _camera_schedule_plan_summary() -> String:
+	var rows: Array[String] = []
+	var limit: int = mini(_camera_schedule_plan.size(), 6)
+	for i in range(limit):
+		var step_row: Dictionary = _camera_schedule_plan[i] as Dictionary
+		rows.append("%s@%.0fs" % [
+			"ON" if bool(step_row.get("state", false)) else "OFF",
+			float(step_row.get("after_s", 0.0)),
+		])
+	return ",".join(rows)
+
 func _advance_to_next_suspect_with_transition(reason: String = "") -> void:
 	if _case_transition_busy:
 		return
@@ -2397,7 +2514,20 @@ func _update_hud() -> void:
 		camera_text = "pos=(%d,%d) zoom=(%.2f,%.2f)" % [int(round(pos.x)), int(round(pos.y)), zoom.x, zoom.y]
 		if _camera_node.has_method("is_edge_pan_enabled"):
 			edge_pan_text = "ON" if _camera_node.call("is_edge_pan_enabled") else "OFF"
-	var camera_line: String = "CAMERA: %s edge_pan=%s" % [camera_text, edge_pan_text]
+	var next_camera_state: String = "END"
+	if _camera_schedule_step < _camera_schedule_plan.size():
+		next_camera_state = "ON" if bool((_camera_schedule_plan[_camera_schedule_step] as Dictionary).get("state", false)) else "OFF"
+	var camera_line: String = "CAMERA: %s edge_pan=%s state=%s next=%s in=%.1fs step=%d/%d seed=%s paused=%s" % [
+		camera_text,
+		edge_pan_text,
+		"ON" if camera_is_on else "OFF",
+		next_camera_state,
+		maxf(_camera_schedule_remaining_s, 0.0),
+		_camera_schedule_step,
+		_camera_schedule_plan.size(),
+		SeedUtil.hex16(_camera_schedule_seed_u64),
+		"YES" if overlay_open else "NO",
+	]
 
 	var danger_fill: int = 0
 	var full_list: Array[String] = []
@@ -2817,6 +2947,7 @@ func _apply_imported_suspect(s: SuspectData, source: String, payload: Dictionary
 		})
 	if _clock != null and current_suspect != null:
 		_clock_rng.seed = int(current_suspect.suspect_seed_u64)
+	_build_camera_schedule_for_current_suspect()
 
 	_reset_verdict_flow()
 
@@ -3166,6 +3297,7 @@ func _refresh_suspect_seed() -> void:
 		_clock_rng.seed = int(current_suspect.suspect_seed_u64)
 		var gap := time_policy.get_clock_gap_minutes(_clock_rng)
 		_clock.add_minutes(gap)
+	_build_camera_schedule_for_current_suspect()
 	if _noise_sys != null:
 		if _noise_carryover_next_suspect:
 			var start_noise := _noise_sys.get_noise()

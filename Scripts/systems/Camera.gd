@@ -9,9 +9,16 @@ extends Camera2D
 @export var snap_strength: float = 5.5
 
 @export var is_overlay_open: bool = false
+@export var camera_is_on: bool = true
+
+var _camera_indicator: CanvasItem = null
 
 func set_overlay_open(open: bool) -> void:
 	is_overlay_open = open
+
+func set_camera_power(is_on: bool) -> void:
+	camera_is_on = is_on
+	_apply_camera_indicator()
 
 func is_edge_pan_enabled() -> bool:
 	return mouse_pan_enabled
@@ -22,6 +29,26 @@ func _ready() -> void:
 	anchor_mode = Camera2D.ANCHOR_MODE_DRAG_CENTER
 	zoom = Vector2(zoom_scale, zoom_scale)
 	_default_position = global_position
+	_cache_camera_indicator()
+	_apply_camera_indicator()
+
+func _cache_camera_indicator() -> void:
+	if is_instance_valid(_camera_indicator):
+		return
+	var names: Array[StringName] = [&"CameraIndicator", &"RecordingLight", &"RedLight", &"CameraLight"]
+	for name in names:
+		var found: Node = find_child(String(name), true, false)
+		if found is CanvasItem:
+			_camera_indicator = found as CanvasItem
+			return
+
+func _apply_camera_indicator() -> void:
+	if not is_instance_valid(_camera_indicator):
+		_cache_camera_indicator()
+	if not is_instance_valid(_camera_indicator):
+		return
+	_camera_indicator.visible = camera_is_on
+	_camera_indicator.modulate = Color(1.0, 0.2, 0.2, 1.0) if camera_is_on else Color(0.35, 0.1, 0.1, 0.6)
 
 func snap_to_default() -> void:
 	global_position = _default_position

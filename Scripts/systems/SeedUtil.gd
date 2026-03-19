@@ -45,6 +45,9 @@ static func derive_seed(base_seed_u64: int, label: String, index: int = 0) -> in
 	var x := (base_seed_u64 ^ h ^ int(index)) & 0x7fffffffffffffff
 	return normalize_seed(_splitmix64(x))
 
+static func derive_camera_schedule_seed(encounter_seed_u64: int, suspect_index: int = 0) -> int:
+	return derive_seed(encounter_seed_u64, "camera_schedule", suspect_index)
+
 static func format_run_seed_u63(seed_u64: int) -> String:
 	return "K11-%s" % _to_base36(normalize_seed(seed_u64))
 
